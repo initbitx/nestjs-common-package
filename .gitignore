@@ -40,3 +40,6 @@ yarn-error.log
 build/config\.gypi
 
 .npmrc
+
+.nx/cache
+.nx/workspace-data

@@ -1,6 +1,6 @@
 {
   "name": "common",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Praction Networks - internal node module package for NestJS framework (@common)",
   "author": "Praction Networks",
   "homepage": "https://developer.praction.in",
