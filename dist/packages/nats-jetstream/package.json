@@ -1,0 +1,26 @@
+{
+  "name": "@praction/nestjs-nats-jetstream",
+  "version": "0.0.1",
+  "description": "NATS JetStream for NestJS",
+  "keywords": [
+    "nestjs",
+    "microservices",
+    "nats",
+    "jetstream"
+  ],
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "@nestjs/microservices": "^10.0.0 || ^11.0.0",
+    "nats": "^2.2.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.0.0"
+  }
+}
