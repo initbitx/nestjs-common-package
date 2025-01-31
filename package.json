@@ -1,8 +1,8 @@
 {
   "name": "@praction/core",
   "version": "0.0.0",
-  "description": "Praction - internal node module package (@praction)",
-  "author": "Praction Network",
+  "description": "Praction Networks - internal node module package (@praction-networks)",
+  "author": "Praction Networks",
   "private": true,
   "workspaces": [
     "packages/*"
