@@ -1,0 +1,30 @@
+{
+  "name": "common",
+  "version": "0.0.0",
+  "description": "Praction - internal node module package for NestJS framework (@common)",
+  "author": "Praction Network",
+  "homepage": "https://developer.praction.in",
+  "license": "UNLICENSED",
+  "private": true,
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "dependencies": {
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0",
+    "@nestjs/core": "^10.0.0",
+    "class-transformer": "*",
+    "class-validator": "*",
+    "reflect-metadata": "^0.1.12 || ^0.2.0",
+    "rxjs": "^7.1.0"
+  },
+  "peerDependenciesMeta": {
+    "class-validator": {
+      "optional": true
+    },
+    "class-transformer": {
+      "optional": true
+    }
+  }
+}
