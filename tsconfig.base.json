@@ -14,7 +14,9 @@
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
-    "paths": {}
+    "paths": {
+      "@praction/nestjs-nats-jetstream": ["packages/nats-jetstream/src/index.ts"]
+    }
   },
   "exclude": ["node_modules", "tmp"]
 }

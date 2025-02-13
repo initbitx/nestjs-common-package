@@ -18,6 +18,11 @@ node_modules/
 packages/**/*.d.ts
 packages/**/*.js
 
+# compiled output
+/dist
+/tmp
+/out-tsc
+
 # misc
 .DS_Store
 lerna-debug.log
