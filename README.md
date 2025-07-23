@@ -93,7 +93,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is private and proprietary to Initbit Technologies.
+This project is open source and available under the [MIT License](./LICENSE).
+
+## Contributing
+
+We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more information on how to get involved.
 
 ## Contact
 

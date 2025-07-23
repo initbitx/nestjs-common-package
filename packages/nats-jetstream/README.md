@@ -201,3 +201,7 @@ Run `nx build nats-jetstream` to build the library.
 ## Running unit tests
 
 Run `nx test nats-jetstream` to execute the unit tests via [Jest](https://jestjs.io).
+
+## License
+
+This package is open source and available under the [MIT License](../../LICENSE).

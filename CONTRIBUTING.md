@@ -23,7 +23,7 @@ This is a monorepo managed with Lerna. To set up the development environment:
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd nest-common-packages
+cd nestjs-common-packages
 
 # Install dependencies
 npm install
@@ -105,7 +105,7 @@ When reporting issues, please include:
 
 ## License
 
-By contributing to this project, you agree that your contributions will be licensed under the project's license, which is private and proprietary to Initbit Technologies.
+By contributing to this project, you agree that your contributions will be licensed under the project's MIT license. See the [LICENSE](./LICENSE) file for details.
 
 ## Contact
 

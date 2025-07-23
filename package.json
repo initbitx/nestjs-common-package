@@ -1,9 +1,10 @@
 {
   "name": "@initbit/core",
   "version": "0.0.0",
-  "description": "Initbit - internal node module package (@initbit)",
+  "description": "Initbit - NestJS common packages for building scalable microservices (@initbit)",
   "author": "Initbit Technologies<connect@inibit.com>",
-  "private": true,
+  "license": "MIT",
+  "private": false,
   "workspaces": [
     "packages/*"
   ],
