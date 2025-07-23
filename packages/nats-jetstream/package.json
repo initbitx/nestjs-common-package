@@ -1,6 +1,6 @@
 {
   "name": "@initbit/nestjs-jetstream",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "NestJS custom NATS JetStream transport",
   "author": "Initbit Technologies<connect@inibit.com>",
   "keywords": [
@@ -24,9 +24,9 @@
     "prepublish": "npm run build"
   },
   "peerDependencies": {
-    "@nestjs/microservices": "^9.0.0 || ^10.0.0 || ^11.0.0",
     "@nestjs/common": "^9.0.0 || ^10.0.0 || ^11.0.0",
     "@nestjs/config": "^4.0.0",
+    "@nestjs/microservices": "^9.0.0 || ^10.0.0 || ^11.0.0",
     "nats": "^2.29.2",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.0.0"
