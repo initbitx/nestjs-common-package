@@ -4,14 +4,14 @@ import { ClientsModule } from '@nestjs/microservices';
 
 import { NatsClient } from './nats.client';
 import { JetStream } from './jetstream.transport';
-import { JETSTREAM_OPTIONS, JETSTREAM_SERVICE_TOKEN, JETSTREAM_TRANSPORT_TOKEN } from './nats.constants';
+import { JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT } from './nats.constants';
 import { NatsJetStreamOptions } from './interfaces/nats-jetstream-options.interface';
 
 @Module({
   imports: [
     ClientsModule.registerAsync([
       {
-        name: JETSTREAM_SERVICE_TOKEN,
+        name: JETSTREAM_CLIENT,
         imports: [ ConfigModule ],
         inject: [ ConfigService ],
         useFactory: async (config: ConfigService) => ({
@@ -27,7 +27,7 @@ import { NatsJetStreamOptions } from './interfaces/nats-jetstream-options.interf
   ],
   providers: [
     {
-      provide: JETSTREAM_TRANSPORT_TOKEN,
+      provide: JETSTREAM_TRANSPORT,
       inject: [ ConfigService ],
       useFactory: async (config: ConfigService) => {
         const servers = config.get<string | string[]>('nats.uri') || 'nats://localhost';
@@ -39,7 +39,7 @@ import { NatsJetStreamOptions } from './interfaces/nats-jetstream-options.interf
       }
     }
   ],
-  exports: [ JETSTREAM_TRANSPORT_TOKEN, JETSTREAM_SERVICE_TOKEN ]
+  exports: [ JETSTREAM_TRANSPORT, JETSTREAM_CLIENT ]
 })
 
 export class NatsJetStreamModule {
@@ -49,14 +49,14 @@ export class NatsJetStreamModule {
    */
   static register(options: NatsJetStreamOptions): DynamicModule {
     const clientProvider = {
-      provide: JETSTREAM_SERVICE_TOKEN,
+      provide: JETSTREAM_CLIENT,
       useFactory: () => {
         return new NatsClient(options);
       }
     };
 
     const transportProvider = {
-      provide: JETSTREAM_TRANSPORT_TOKEN,
+      provide: JETSTREAM_TRANSPORT,
       useFactory: () => {
         const servers = options.connection?.servers || 'nats://localhost';
         return new JetStream({
@@ -78,7 +78,7 @@ export class NatsJetStreamModule {
         clientProvider,
         transportProvider
       ],
-      exports: [JETSTREAM_OPTIONS, JETSTREAM_SERVICE_TOKEN, JETSTREAM_TRANSPORT_TOKEN]
+      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT]
     };
   }
 
@@ -92,7 +92,7 @@ export class NatsJetStreamModule {
     inject?: any[];
   }): DynamicModule {
     const clientProvider = {
-      provide: JETSTREAM_SERVICE_TOKEN,
+      provide: JETSTREAM_CLIENT,
       inject: [JETSTREAM_OPTIONS],
       useFactory: (options: NatsJetStreamOptions) => {
         return new NatsClient(options);
@@ -100,7 +100,7 @@ export class NatsJetStreamModule {
     };
 
     const transportProvider = {
-      provide: JETSTREAM_TRANSPORT_TOKEN,
+      provide: JETSTREAM_TRANSPORT,
       inject: [JETSTREAM_OPTIONS],
       useFactory: (options: NatsJetStreamOptions) => {
         const servers = options.connection?.servers || 'nats://localhost';
@@ -125,7 +125,7 @@ export class NatsJetStreamModule {
         clientProvider,
         transportProvider
       ],
-      exports: [JETSTREAM_OPTIONS, JETSTREAM_SERVICE_TOKEN, JETSTREAM_TRANSPORT_TOKEN]
+      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT]
     };
   }
 }

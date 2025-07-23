@@ -82,14 +82,14 @@ export class AppModule {}
 
 ```typescript
 import { NestFactory } from '@nestjs/core';
-import { JetStream, JETSTREAM_TRANSPORT_TOKEN } from '@initbit/nestjs-jetstream';
+import { JetStream, JETSTREAM_TRANSPORT } from '@initbit/nestjs-jetstream';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Get the JetStream transport from the module
-  const transport = app.get<JetStream>(JETSTREAM_TRANSPORT_TOKEN);
+  const transport = app.get<JetStream>(JETSTREAM_TRANSPORT);
 
   // Create a microservice with the transport
   app.connectMicroservice({
@@ -129,13 +129,13 @@ export class AppController {
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { NatsClient, JETSTREAM_SERVICE_TOKEN } from '@initbit/nestjs-jetstream';
+import { NatsClient, JETSTREAM_CLIENT } from '@initbit/nestjs-jetstream';
 import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class AppService {
   constructor(
-    @Inject(JETSTREAM_SERVICE_TOKEN)
+    @Inject(JETSTREAM_CLIENT)
     private readonly client: NatsClient
   ) {}
 
