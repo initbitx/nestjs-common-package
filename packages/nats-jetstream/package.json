@@ -1,6 +1,6 @@
 {
   "name": "@initbit/nestjs-jetstream",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "NestJS custom NATS JetStream transport",
   "author": "Initbit Technologies<connect@inibit.com>",
   "repository": {
