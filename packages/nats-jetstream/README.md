@@ -24,6 +24,8 @@ This package provides a custom transport strategy for NestJS applications to com
 - Proper connection management with reconnection handling
 - Support for multiple server addresses for high availability
 - Graceful shutdown and connection draining
+- Advanced consumer configuration options (DeliverPolicy, AckPolicy, etc.)
+- Direct access to NATS API through NatsContext
 
 ## Usage
 
@@ -151,16 +153,108 @@ export class AppService {
 }
 ```
 
+### Advanced Consumer Configuration
+
+The JetStream transport supports advanced consumer configuration options:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { NatsJetStreamModule } from '@initbit/nestjs-jetstream';
+import { DeliverPolicy, AckPolicy } from 'nats';
+
+@Module({
+  imports: [
+    NatsJetStreamModule.register({
+      connection: {
+        servers: ['nats://localhost:4222']
+      },
+      streamName: 'my-stream',
+      durableName: 'my-consumer',
+      // Advanced consumer options
+      deliverPolicy: DeliverPolicy.New,
+      ackPolicy: AckPolicy.Explicit,
+      ackWait: 30, // 30 seconds
+      filterSubject: 'orders.created',
+      // Or use multiple filter subjects
+      filterSubjects: ['orders.created', 'orders.updated']
+    })
+  ]
+})
+export class AppModule {}
+```
+
+### Using NatsContext for NATS API Access
+
+The NatsContext provides direct access to the underlying NATS API:
+
+```typescript
+import { Controller } from '@nestjs/common';
+import { EventPattern, Ctx } from '@nestjs/microservices';
+import { NatsContext } from '@initbit/nestjs-jetstream';
+
+@Controller()
+export class OrdersController {
+  @EventPattern('orders.created')
+  async handleOrderCreated(data: any, @Ctx() context: NatsContext) {
+    try {
+      // Check if this is a JetStream message
+      if (context.isJetStream()) {
+        // Mark the message as being worked on (extends ack wait time)
+        context.working();
+        
+        // Get JetStream metadata
+        const metadata = context.getMetadata();
+        console.log('Stream:', metadata.stream);
+        console.log('Consumer:', metadata.consumer);
+        console.log('Delivered:', metadata.delivered.count);
+        
+        // Process the message
+        await this.processOrder(data);
+        
+        // Acknowledge the message on success
+        context.ack();
+      } else {
+        // Handle regular NATS message
+        console.log('Regular NATS message:', data);
+      }
+    } catch (error) {
+      if (context.isJetStream()) {
+        if (error.retryable) {
+          // Negative acknowledge for retryable errors (will be redelivered)
+          context.nack();
+        } else {
+          // Terminate for non-retryable errors (will not be redelivered)
+          context.term();
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async processOrder(order: any) {
+    // Process the order...
+  }
+}
+```
+
 ## Configuration Options
 
 The `NatsJetStreamOptions` interface provides the following configuration options:
 
+### Basic Options
 - `connection`: NATS connection options
 - `codec`: NATS codec for encoding and decoding messages
 - `consumer`: Function to configure JetStream consumer options
 - `queue`: Queue group name for NATS queue subscriptions
 - `streamName`: JetStream stream name
 - `durableName`: JetStream durable consumer name
+
+### Advanced Consumer Options
+- `deliverPolicy`: Delivery policy for the consumer (e.g., DeliverPolicy.All, DeliverPolicy.New)
+- `ackPolicy`: Acknowledgment policy for the consumer (e.g., AckPolicy.Explicit, AckPolicy.None)
+- `ackWait`: How long to wait for an acknowledgment (in seconds)
+- `filterSubject`: A single subject to filter messages from the stream
+- `filterSubjects`: Multiple subjects to filter messages from the stream
 
 ## Technical Requirements
 
@@ -205,3 +299,19 @@ Run `nx test nats-jetstream` to execute the unit tests via [Jest](https://jestjs
 ## License
 
 This package is open source and available under the [MIT License](../../LICENSE).
+
+## Repository
+
+This package is part of the [nestjs-common-package](https://github.com/initbitx/nestjs-common-package) monorepo. You can find the source code for this package in the [packages/nats-jetstream](https://github.com/initbitx/nestjs-common-package/tree/main/packages/nats-jetstream) directory.
+
+## Issues and Bug Reports
+
+If you encounter any issues or bugs, please report them on our [GitHub Issues page](https://github.com/initbitx/nestjs-common-package/issues).
+
+When reporting an issue, please include:
+- A clear and descriptive title
+- Steps to reproduce the issue
+- Expected behavior
+- Actual behavior
+- Any relevant logs or error messages
+- Your environment (Node.js version, NestJS version, etc.)

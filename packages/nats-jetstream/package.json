@@ -3,11 +3,31 @@
   "version": "1.0.2",
   "description": "NestJS custom NATS JetStream transport",
   "author": "Initbit Technologies<connect@inibit.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/initbitx/nestjs-common-package.git",
+    "directory": "packages/nats-jetstream"
+  },
+  "bugs": {
+    "url": "https://github.com/initbitx/nestjs-common-package/issues"
+  },
+  "homepage": "https://github.com/initbitx/nestjs-common-package/tree/main/packages/nats-jetstream#readme",
   "keywords": [
     "nestjs",
     "microservices",
     "nats",
-    "jetstream"
+    "jetstream",
+    "transport",
+    "pubsub",
+    "publish-subscribe",
+    "request-response",
+    "messaging",
+    "streaming",
+    "queue",
+    "typescript",
+    "high-availability",
+    "acknowledgment",
+    "event-driven"
   ],
   "license": "MIT",
   "type": "commonjs",

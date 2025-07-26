@@ -1,6 +1,7 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule } from '@nestjs/microservices';
+import { AckPolicy, DeliverPolicy } from 'nats';
 
 import { NatsClient } from './nats.client';
 import { JetStream } from './jetstream.transport';
@@ -33,8 +34,14 @@ import { NatsJetStreamOptions } from './interfaces/nats-jetstream-options.interf
         const servers = config.get<string | string[]>('nats.uri') || 'nats://localhost';
         return new JetStream({
           servers: servers,
-          streamName: 'hello.*',
-          durableName: 'APP_SERVICE'
+          streamName: config.get<string>('nats.stream') || 'hello.*',
+          durableName: config.get<string>('nats.consumer') || 'APP_SERVICE',
+          queue: config.get<string>('nats.queue'),
+          deliverPolicy: config.get<DeliverPolicy>('nats.deliverPolicy'),
+          ackPolicy: config.get<AckPolicy>('nats.ackPolicy'),
+          ackWait: config.get<number>('nats.ackWait'),
+          filterSubject: config.get<string>('nats.filterSubject'),
+          filterSubjects: config.get<string[]>('nats.filterSubjects')
         });
       }
     }
@@ -63,7 +70,13 @@ export class NatsJetStreamModule {
           servers: servers,
           streamName: options.streamName || 'default',
           durableName: options.durableName || 'default',
-          queue: options.queue
+          queue: options.queue,
+          deliverPolicy: options.deliverPolicy,
+          ackPolicy: options.ackPolicy,
+          ackWait: options.ackWait,
+          filterSubject: options.filterSubject,
+          filterSubjects: options.filterSubjects,
+          consumer: options.consumer
         });
       }
     };
@@ -108,7 +121,13 @@ export class NatsJetStreamModule {
           servers: servers,
           streamName: options.streamName || 'default',
           durableName: options.durableName || 'default',
-          queue: options.queue
+          queue: options.queue,
+          deliverPolicy: options.deliverPolicy,
+          ackPolicy: options.ackPolicy,
+          ackWait: options.ackWait,
+          filterSubject: options.filterSubject,
+          filterSubjects: options.filterSubjects,
+          consumer: options.consumer
         });
       }
     };

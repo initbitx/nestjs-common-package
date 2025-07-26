@@ -29,8 +29,8 @@ This is a monorepo managed with Lerna. To get started, clone the repository and 
 
 ```bash
   # Clone the repository
-  git clone <repository-url>
-  cd nest-common-packages
+  git clone https://github.com/initbitx/nestjs-common-package.git
+  cd nestjs-common-package
   
   # Install dependencies
   npm install
@@ -98,6 +98,18 @@ This project is open source and available under the [MIT License](./LICENSE).
 ## Contributing
 
 We welcome contributions from the community! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for more information on how to get involved.
+
+## Issues and Bug Reports
+
+If you encounter any issues or bugs, please report them on our [GitHub Issues page](https://github.com/initbitx/nestjs-common-package/issues).
+
+When reporting an issue, please include:
+- A clear and descriptive title
+- Steps to reproduce the issue
+- Expected behavior
+- Actual behavior
+- Any relevant logs or error messages
+- Your environment (Node.js version, NestJS version, etc.)
 
 ## Contact
 

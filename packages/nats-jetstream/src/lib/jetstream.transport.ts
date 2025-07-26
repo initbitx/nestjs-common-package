@@ -16,7 +16,18 @@ export class JetStream extends Server implements CustomTransportStrategy {
   protected readonly durableName: string;
   private eventHandlers = new Map<string, Function>();
 
-  constructor(private readonly options: { servers: string | string[], streamName: string, durableName: string, queue?: string, consumer?: (consumerOptions: ConsumerOptsBuilder) => void }) {
+  constructor(private readonly options: {
+    servers: string | string[],
+    streamName: string,
+    durableName: string,
+    queue?: string,
+    consumer?: (consumerOptions: ConsumerOptsBuilder) => void,
+    deliverPolicy?: DeliverPolicy,
+    ackPolicy?: AckPolicy,
+    ackWait?: number,
+    filterSubject?: string,
+    filterSubjects?: string[]
+  }) {
     super();
     this.durableName = options.durableName;
 
@@ -80,10 +91,25 @@ export class JetStream extends Server implements CustomTransportStrategy {
     try {
       const consumerConfig: ConsumerConfig = {
         durable_name: this.durableName,
-        ack_policy: AckPolicy.Explicit,
-        deliver_policy: DeliverPolicy.All,
+        ack_policy: this.options.ackPolicy || AckPolicy.Explicit,
+        deliver_policy: this.options.deliverPolicy || DeliverPolicy.All,
         replay_policy: ReplayPolicy.Original
       };
+
+      // Add ackWait if specified
+      if (this.options.ackWait !== undefined) {
+        consumerConfig.ack_wait = this.options.ackWait * 1_000_000; // Convert to nanoseconds
+      }
+
+      // Add filterSubject if specified
+      if (this.options.filterSubject) {
+        consumerConfig.filter_subject = this.options.filterSubject;
+      }
+
+      // Add filterSubjects if specified
+      if (this.options.filterSubjects && this.options.filterSubjects.length > 0) {
+        consumerConfig.filter_subjects = this.options.filterSubjects;
+      }
 
       await jsm.consumers.add(this.options.streamName, consumerConfig);
       this.logger.log(`Durable consumer "${this.durableName}" set up.`);

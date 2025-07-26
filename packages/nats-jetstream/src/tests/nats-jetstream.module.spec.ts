@@ -1,4 +1,4 @@
-import { JSONCodec } from 'nats';
+import { JSONCodec, DeliverPolicy, AckPolicy } from 'nats';
 
 import { NatsJetStreamModule } from '../lib/nats-jetstream.module';
 import { NatsClient } from '../lib/nats.client';
@@ -59,7 +59,7 @@ describe('NatsJetStreamModule', () => {
   });
 
   describe('register', () => {
-    it('should create client and transport with static options', () => {
+    it('should create client and transport with static options including advanced options', () => {
       const options: NatsJetStreamOptions = {
         codec: JSONCodec(),
         connection: {
@@ -68,6 +68,15 @@ describe('NatsJetStreamModule', () => {
         streamName: 'custom-stream',
         durableName: 'CUSTOM_SERVICE',
         queue: 'custom-queue',
+        // Advanced options
+        deliverPolicy: DeliverPolicy.New,
+        ackPolicy: AckPolicy.None,
+        ackWait: 30,
+        filterSubject: 'specific.subject',
+        filterSubjects: ['subject1', 'subject2'],
+        consumer: (builder) => {
+          builder.deliverTo('custom-inbox');
+        }
       };
 
       // Simulate the client factory function
@@ -82,7 +91,13 @@ describe('NatsJetStreamModule', () => {
           servers: Array.isArray(servers) ? servers : (servers ? [servers as string] : ['nats://localhost']),
           streamName: options.streamName || 'default',
           durableName: options.durableName || 'default',
-          queue: options.queue
+          queue: options.queue,
+          deliverPolicy: options.deliverPolicy,
+          ackPolicy: options.ackPolicy,
+          ackWait: options.ackWait,
+          filterSubject: options.filterSubject,
+          filterSubjects: options.filterSubjects,
+          consumer: options.consumer
         });
       };
 
@@ -99,6 +114,12 @@ describe('NatsJetStreamModule', () => {
         streamName: 'custom-stream',
         durableName: 'CUSTOM_SERVICE',
         queue: 'custom-queue',
+        deliverPolicy: DeliverPolicy.New,
+        ackPolicy: AckPolicy.None,
+        ackWait: 30,
+        filterSubject: 'specific.subject',
+        filterSubjects: ['subject1', 'subject2'],
+        consumer: options.consumer
       });
     });
 
@@ -162,7 +183,13 @@ describe('NatsJetStreamModule', () => {
           servers: Array.isArray(servers) ? servers : (servers ? [servers as string] : ['nats://localhost']),
           streamName: opts.streamName || 'default',
           durableName: opts.durableName || 'default',
-          queue: opts.queue
+          queue: opts.queue,
+          deliverPolicy: opts.deliverPolicy,
+          ackPolicy: opts.ackPolicy,
+          ackWait: opts.ackWait,
+          filterSubject: opts.filterSubject,
+          filterSubjects: opts.filterSubjects,
+          consumer: opts.consumer
         });
       };
 
@@ -212,7 +239,13 @@ describe('NatsJetStreamModule', () => {
           servers: Array.isArray(servers) ? servers : (servers ? [servers as string] : ['nats://localhost']),
           streamName: opts.streamName || 'default',
           durableName: opts.durableName || 'default',
-          queue: opts.queue
+          queue: opts.queue,
+          deliverPolicy: opts.deliverPolicy,
+          ackPolicy: opts.ackPolicy,
+          ackWait: opts.ackWait,
+          filterSubject: opts.filterSubject,
+          filterSubjects: opts.filterSubjects,
+          consumer: opts.consumer
         });
       };
 
@@ -242,7 +275,13 @@ describe('NatsJetStreamModule', () => {
           servers: Array.isArray(servers) ? servers : (servers ? [servers as string] : ['nats://localhost']),
           streamName: opts.streamName || 'default',
           durableName: opts.durableName || 'default',
-          queue: opts.queue
+          queue: opts.queue,
+          deliverPolicy: opts.deliverPolicy,
+          ackPolicy: opts.ackPolicy,
+          ackWait: opts.ackWait,
+          filterSubject: opts.filterSubject,
+          filterSubjects: opts.filterSubjects,
+          consumer: opts.consumer
         });
       };
 

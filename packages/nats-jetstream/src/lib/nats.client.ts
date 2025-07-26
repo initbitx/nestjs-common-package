@@ -60,6 +60,8 @@ export class NatsClient extends ClientProxy {
     return this.jetstreamClient;
   }
 
+
+
   async handleStatusUpdates(connection: NatsConnection): Promise<void> {
     for await (const status of connection.status()) {
       const data = typeof status.data === 'object' ? JSON.stringify(status.data) : status.data;

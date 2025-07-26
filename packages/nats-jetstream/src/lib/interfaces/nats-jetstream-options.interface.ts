@@ -1,4 +1,4 @@
-import { Codec, ConnectionOptions, ConsumerOptsBuilder } from "nats";
+import { AckPolicy, Codec, ConnectionOptions, ConsumerOptsBuilder, DeliverPolicy } from "nats";
 
 export interface NatsJetStreamOptions {
   /**
@@ -35,4 +35,34 @@ export interface NatsJetStreamOptions {
    * @see https://docs.nats.io/jetstream/concepts/consumers
    */
   durableName?: string;
+
+  /**
+   * Delivery policy for the consumer
+   * @see https://docs.nats.io/jetstream/concepts/consumers#deliverpolicy
+   */
+  deliverPolicy?: DeliverPolicy;
+
+  /**
+   * Acknowledgment policy for the consumer
+   * @see https://docs.nats.io/jetstream/concepts/consumers#acknowledgement
+   */
+  ackPolicy?: AckPolicy;
+
+  /**
+   * How long to wait for an acknowledgment
+   * @see https://docs.nats.io/jetstream/concepts/consumers#ackwait
+   */
+  ackWait?: number;
+
+  /**
+   * A single subject to filter messages from the stream
+   * @see https://docs.nats.io/jetstream/concepts/consumers#filtersubject
+   */
+  filterSubject?: string;
+
+  /**
+   * Multiple subjects to filter messages from the stream
+   * @see https://docs.nats.io/jetstream/concepts/consumers#filtersubjects
+   */
+  filterSubjects?: string[];
 }

@@ -1,4 +1,4 @@
-import { Codec, ConsumerOptsBuilder, JetStreamClient, JetStreamManager, JsMsg, JSONCodec, Msg, NatsConnection, StringCodec } from 'nats';
+import { AckPolicy, Codec, ConsumerOptsBuilder, DeliverPolicy, JetStreamClient, JetStreamManager, JsMsg, JSONCodec, Msg, NatsConnection, StringCodec } from 'nats';
 
 import { NatsContext } from '../lib/nats.context';
 
@@ -13,7 +13,13 @@ describe('NatsTransportStrategy', () => {
     strategy = new JetStream({
       servers: 'nats://localhost:4222',
       streamName: 'test-stream',
-      durableName: 'test-consumer'
+      durableName: 'test-consumer',
+      // Include new options with default values
+      deliverPolicy: undefined,
+      ackPolicy: undefined,
+      ackWait: undefined,
+      filterSubject: undefined,
+      filterSubjects: undefined
     });
   });
 
@@ -77,6 +83,46 @@ describe('NatsTransportStrategy', () => {
       expect((strategy as any).nc).toBeUndefined();
       expect((strategy as any).js).toBeUndefined();
       expect((strategy as any).jsm).toBeUndefined();
+    });
+  });
+
+  // Test for ensureConsumer method with new options
+  describe('ensureConsumer', () => {
+    it('should configure consumer with advanced options', async () => {
+      // Create a JetStream instance with advanced options
+      const strategy = new JetStream({
+        servers: 'nats://localhost:4222',
+        streamName: 'test-stream',
+        durableName: 'test-consumer',
+        deliverPolicy: DeliverPolicy.New,
+        ackPolicy: AckPolicy.None,
+        ackWait: 30,
+        filterSubject: 'specific.subject',
+        filterSubjects: ['subject1', 'subject2']
+      });
+
+      // Mock JetStreamManager
+      const addConsumerMock = jest.fn().mockResolvedValue({});
+      const jsm = createMock<JetStreamManager>({
+        consumers: {
+          add: addConsumerMock
+        }
+      });
+
+      // Call ensureConsumer
+      await strategy.ensureConsumer(jsm);
+
+      // Verify that the consumer was created with the correct options
+      expect(addConsumerMock).toHaveBeenCalledTimes(1);
+      expect(addConsumerMock.mock.calls[0][0]).toBe('test-stream');
+
+      const consumerConfig = addConsumerMock.mock.calls[0][1];
+      expect(consumerConfig.durable_name).toBe('test-consumer');
+      expect(consumerConfig.deliver_policy).toBe(DeliverPolicy.New);
+      expect(consumerConfig.ack_policy).toBe(AckPolicy.None);
+      expect(consumerConfig.ack_wait).toBe(30 * 1_000_000); // 30 seconds in nanoseconds
+      expect(consumerConfig.filter_subject).toBe('specific.subject');
+      expect(consumerConfig.filter_subjects).toEqual(['subject1', 'subject2']);
     });
   });
 
