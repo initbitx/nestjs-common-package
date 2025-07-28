@@ -22,7 +22,8 @@
     "init": "lerna init",
     "publish": "lerna publish",
     "run": "lerna run",
-    "version": "lerna version"
+    "version": "lerna version",
+    "test": "lerna run test"
   },
   "devDependencies": {
     "@eslint/js": "^9.8.0",
