@@ -1,4 +1,5 @@
 import { Codec, ConnectionOptions } from "nats";
+import { LoggerService } from "@nestjs/common";
 
 export interface NatsClientOptions {
   /**
@@ -10,4 +11,9 @@ export interface NatsClientOptions {
    * NATS connection options
    */
   connection?: ConnectionOptions;
+
+  /**
+   * Logger service to use for logging
+   */
+  logger?: LoggerService;
 }

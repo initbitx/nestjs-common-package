@@ -288,6 +288,31 @@ The following improvements are planned for future releases:
 - Add middleware support
 - Create additional utilities and helpers
 
+## Recent Improvements
+
+The following improvements have been implemented in recent releases:
+
+### NestJS Application Logger Integration
+- The package now properly integrates with NestJS application logger
+- When configured with `app.useLogger(app.get(Logger))`, the transport will use the application's logger
+- Logger can be provided via the options object: `NatsJetStreamModule.register({ logger: yourLogger })`
+- Both `NatsClient` and `JetStream` classes now accept a logger through their options
+
+### Event Emission Enhancements
+- Improved event emission reliability with automatic reconnection
+- Added retry logic with exponential backoff for failed event publications
+- Specific handling for 503 errors (service unavailable) with reconnection attempts
+- Better error reporting and logging for event dispatch issues
+
+### Subject Subscription Fixes
+- Fixed an issue where subject subscriptions were always prefixed with the stream name
+- Event patterns like `@EventPattern('domain.user.greet')` now subscribe correctly without modification
+- Stream configuration now uses wildcard subjects (`*`, `>`) to capture all patterns
+
+### Configuration Options
+- Added `logger` option to `NatsJetStreamOptions` and `NatsClientOptions` interfaces
+- Updated the module to properly inject and use the provided logger
+
 ## Building
 
 Run `nx build nats-jetstream` to build the library.

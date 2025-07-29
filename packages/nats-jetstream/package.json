@@ -24,9 +24,6 @@
     "messaging",
     "streaming",
     "queue",
-    "typescript",
-    "high-availability",
-    "acknowledgment",
     "event-driven"
   ],
   "license": "MIT",

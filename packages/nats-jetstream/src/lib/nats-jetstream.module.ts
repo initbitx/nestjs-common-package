@@ -1,6 +1,7 @@
-import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { DynamicModule, Module, Logger, LoggerService } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule } from '@nestjs/microservices';
+import { APP_LOGGER } from './nats.constants';
 import { AckPolicy, DeliverPolicy } from 'nats';
 
 import { NatsClient } from './nats.client';
@@ -55,16 +56,28 @@ export class NatsJetStreamModule {
    * @param options Configuration options for the JetStream transport
    */
   static register(options: NatsJetStreamOptions): DynamicModule {
+    const loggerProvider = {
+      provide: APP_LOGGER,
+      useFactory: () => {
+        return options.logger || new Logger('NatsJetStream');
+      }
+    };
+
     const clientProvider = {
       provide: JETSTREAM_CLIENT,
-      useFactory: () => {
-        return new NatsClient(options);
+      inject: [APP_LOGGER],
+      useFactory: (logger: LoggerService) => {
+        return new NatsClient({
+          ...options,
+          logger
+        });
       }
     };
 
     const transportProvider = {
       provide: JETSTREAM_TRANSPORT,
-      useFactory: () => {
+      inject: [APP_LOGGER],
+      useFactory: (logger: LoggerService) => {
         const servers = options.connection?.servers || 'nats://localhost';
         return new JetStream({
           servers: servers,
@@ -76,7 +89,8 @@ export class NatsJetStreamModule {
           ackWait: options.ackWait,
           filterSubject: options.filterSubject,
           filterSubjects: options.filterSubjects,
-          consumer: options.consumer
+          consumer: options.consumer,
+          logger
         });
       }
     };
@@ -88,10 +102,11 @@ export class NatsJetStreamModule {
           provide: JETSTREAM_OPTIONS,
           useValue: options
         },
+        loggerProvider,
         clientProvider,
         transportProvider
       ],
-      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT]
+      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT, APP_LOGGER]
     };
   }
 
@@ -104,18 +119,29 @@ export class NatsJetStreamModule {
     useFactory: (...args: any[]) => Promise<NatsJetStreamOptions> | NatsJetStreamOptions;
     inject?: any[];
   }): DynamicModule {
-    const clientProvider = {
-      provide: JETSTREAM_CLIENT,
+    const loggerProvider = {
+      provide: APP_LOGGER,
       inject: [JETSTREAM_OPTIONS],
       useFactory: (options: NatsJetStreamOptions) => {
-        return new NatsClient(options);
+        return options.logger || new Logger('NatsJetStream');
+      }
+    };
+
+    const clientProvider = {
+      provide: JETSTREAM_CLIENT,
+      inject: [JETSTREAM_OPTIONS, APP_LOGGER],
+      useFactory: (options: NatsJetStreamOptions, logger: LoggerService) => {
+        return new NatsClient({
+          ...options,
+          logger
+        });
       }
     };
 
     const transportProvider = {
       provide: JETSTREAM_TRANSPORT,
-      inject: [JETSTREAM_OPTIONS],
-      useFactory: (options: NatsJetStreamOptions) => {
+      inject: [JETSTREAM_OPTIONS, APP_LOGGER],
+      useFactory: (options: NatsJetStreamOptions, logger: LoggerService) => {
         const servers = options.connection?.servers || 'nats://localhost';
         return new JetStream({
           servers: servers,
@@ -127,7 +153,8 @@ export class NatsJetStreamModule {
           ackWait: options.ackWait,
           filterSubject: options.filterSubject,
           filterSubjects: options.filterSubjects,
-          consumer: options.consumer
+          consumer: options.consumer,
+          logger
         });
       }
     };
@@ -141,10 +168,11 @@ export class NatsJetStreamModule {
           useFactory: options.useFactory,
           inject: options.inject || []
         },
+        loggerProvider,
         clientProvider,
         transportProvider
       ],
-      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT]
+      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT, APP_LOGGER]
     };
   }
 }

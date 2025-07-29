@@ -1,5 +1,5 @@
 import { CustomTransportStrategy, MessageHandler, Server } from '@nestjs/microservices';
-import { Logger } from '@nestjs/common';
+import { Logger, LoggerService } from '@nestjs/common';
 
 import { AckPolicy, Codec, connect, ConsumerConfig, consumerOpts, ConsumerOptsBuilder, createInbox, DeliverPolicy, JetStreamClient, JetStreamManager, JsMsg, JSONCodec, Msg, NatsConnection, NatsError, ReplayPolicy } from 'nats';
 
@@ -8,7 +8,7 @@ import { NACK, TERM } from './nats.constants';
 
 export class JetStream extends Server implements CustomTransportStrategy {
 
-  protected override readonly logger = new Logger(JetStream.name);
+  protected override readonly logger: LoggerService;
   protected nc?: NatsConnection;
   protected js?: JetStreamClient;
   protected jsm?: JetStreamManager;
@@ -16,20 +16,24 @@ export class JetStream extends Server implements CustomTransportStrategy {
   protected readonly durableName: string;
   private eventHandlers = new Map<string, Function>();
 
-  constructor(private readonly options: {
-    servers: string | string[],
-    streamName: string,
-    durableName: string,
-    queue?: string,
-    consumer?: (consumerOptions: ConsumerOptsBuilder) => void,
-    deliverPolicy?: DeliverPolicy,
-    ackPolicy?: AckPolicy,
-    ackWait?: number,
-    filterSubject?: string,
-    filterSubjects?: string[]
-  }) {
+  constructor(
+    private readonly options: {
+      servers: string | string[],
+      streamName: string,
+      durableName: string,
+      queue?: string,
+      consumer?: (consumerOptions: ConsumerOptsBuilder) => void,
+      deliverPolicy?: DeliverPolicy,
+      ackPolicy?: AckPolicy,
+      ackWait?: number,
+      filterSubject?: string,
+      filterSubjects?: string[],
+      logger?: LoggerService
+    }
+  ) {
     super();
     this.durableName = options.durableName;
+    this.logger = options.logger || new Logger(JetStream.name);
 
     // Ensure servers is always an array
     if (typeof this.options.servers === 'string') {
@@ -38,10 +42,10 @@ export class JetStream extends Server implements CustomTransportStrategy {
   }
 
   async listen(callback: () => void) {
-    const serversDisplay = Array.isArray(this.options.servers)
+    const servers = Array.isArray(this.options.servers)
       ? this.options.servers.join(', ')
       : this.options.servers;
-    this.logger.log(`Connecting to NATS JetStream (${serversDisplay})...`);
+    this.logger.log(`Connecting to NATS JetStream (${servers})...`);
     this.nc = await connect({ servers: this.options.servers });
     this.js = this.nc.jetstream();
     this.jsm = await this.nc.jetstreamManager();
@@ -76,7 +80,8 @@ export class JetStream extends Server implements CustomTransportStrategy {
 
   async ensureStream(jsm: JetStreamManager) {
     try {
-      await jsm.streams.add({ name: this.options.streamName, subjects: [ `${this.options.streamName}.*` ] });
+      // Use wildcard subject without streamName prefix to capture all patterns
+      await jsm.streams.add({ name: this.options.streamName, subjects: [ '*', '>' ] });
       this.logger.log(`Stream "${this.options.streamName}" created.`);
     } catch (err: any) {
       if (err.message.includes('already in use')) {
@@ -124,9 +129,8 @@ export class JetStream extends Server implements CustomTransportStrategy {
 
   subscribeToTopics(js: JetStreamClient) {
     for (const pattern of this.messageHandlers.keys()) {
-      const subject = `${this.options.streamName}.${pattern}`;
-
-      this.logger.log(`Subscribed to: ${subject}`);
+      // Use the pattern directly without appending streamName
+      this.logger.log(`Subscribed to: ${pattern}`);
     }
   }
 
@@ -176,7 +180,7 @@ export class JetStream extends Server implements CustomTransportStrategy {
         case 'pingTimer':
         case 'reconnecting':
         case 'staleConnection':
-          this.logger.debug(message);
+          this.logger?.debug?.(message);
           break;
 
         case 'disconnect':
@@ -193,7 +197,7 @@ export class JetStream extends Server implements CustomTransportStrategy {
           break;
 
         case 'update':
-          this.logger.verbose(message);
+          this.logger?.verbose?.(message);
           break;
       }
     }

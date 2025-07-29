@@ -1,4 +1,5 @@
 import { AckPolicy, Codec, ConnectionOptions, ConsumerOptsBuilder, DeliverPolicy } from "nats";
+import { LoggerService } from "@nestjs/common";
 
 export interface NatsJetStreamOptions {
   /**
@@ -65,4 +66,9 @@ export interface NatsJetStreamOptions {
    * @see https://docs.nats.io/jetstream/concepts/consumers#filtersubjects
    */
   filterSubjects?: string[];
+
+  /**
+   * Logger service to use for logging
+   */
+  logger?: LoggerService;
 }

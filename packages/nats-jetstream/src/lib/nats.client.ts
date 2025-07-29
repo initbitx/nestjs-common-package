@@ -1,5 +1,5 @@
 import { ClientProxy, ReadPacket, WritePacket } from '@nestjs/microservices';
-import { Logger } from '@nestjs/common';
+import { Logger, LoggerService } from '@nestjs/common';
 
 import { Codec, connect, ConnectionOptions, JetStreamClient, JSONCodec, NatsConnection } from 'nats';
 
@@ -9,7 +9,7 @@ import { NatsClientOptions } from './interfaces/nats-client-options.interface';
 
 export class NatsClient extends ClientProxy {
   protected readonly codec: Codec<unknown>;
-  protected readonly logger: Logger;
+  protected readonly logger: LoggerService;
 
   protected connection?: NatsConnection;
   protected jetstreamClient?: JetStreamClient;
@@ -17,7 +17,7 @@ export class NatsClient extends ClientProxy {
   constructor(protected readonly options: NatsClientOptions = {}) {
     super();
     this.codec = options.codec || JSONCodec();
-    this.logger = new Logger(this.constructor.name);
+    this.logger = options.logger || new Logger(this.constructor.name);
   }
 
   async connect(): Promise<NatsConnection> {
@@ -60,8 +60,6 @@ export class NatsClient extends ClientProxy {
     return this.jetstreamClient;
   }
 
-
-
   async handleStatusUpdates(connection: NatsConnection): Promise<void> {
     for await (const status of connection.status()) {
       const data = typeof status.data === 'object' ? JSON.stringify(status.data) : status.data;
@@ -71,7 +69,7 @@ export class NatsClient extends ClientProxy {
         case 'pingTimer':
         case 'reconnecting':
         case 'staleConnection':
-          this.logger.debug(message);
+          this.logger?.debug?.(message);
           break;
 
         case 'disconnect':
@@ -88,7 +86,7 @@ export class NatsClient extends ClientProxy {
           break;
 
         case 'update':
-          this.logger.verbose(message);
+          this.logger?.verbose?.(message);
           break;
       }
     }
@@ -96,14 +94,69 @@ export class NatsClient extends ClientProxy {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   protected async dispatchEvent(packet: ReadPacket): Promise<any> {
+    // Ensure connection is established
+    if (!this.connection) {
+      this.logger.log('Connecting to NATS before dispatching event...');
+      await this.connect();
+    }
+
     if (!this.jetstreamClient) {
-      throw new Error('JetStream not connected!');
+      this.logger.log('Initializing JetStream client...');
+      this.jetstreamClient = this.createJetStreamClient(this.connection!);
+    }
+
+    // Throw error if jetstream client is still undefined after initialization attempt
+    if (!this.jetstreamClient) {
+      throw new Error('JetStream client is undefined');
     }
 
     const payload = this.codec.encode(packet.data);
     const subject = this.normalizePattern(packet.pattern);
 
-    await this.jetstreamClient.publish(subject, payload);
+    this.logger.log(`Dispatching event to subject: ${subject}`);
+
+    // Add retry logic with exponential backoff
+    const maxRetries = 3;
+    let retryCount = 0;
+    let lastError: Error | null = null;
+
+    while (retryCount < maxRetries) {
+      try {
+        await this.jetstreamClient!.publish(subject, payload);
+        this.logger.log(`Event successfully published to ${subject}`);
+        return;
+      } catch (error: any) {
+        lastError = error;
+        retryCount++;
+
+        if (error.code === '503') {
+          this.logger.warn(`JetStream service unavailable (503), retry ${retryCount}/${maxRetries}`);
+
+          // Attempt to reconnect
+          try {
+            this.logger.log('Attempting to reconnect to JetStream...');
+            await this.close();
+            await this.connect();
+            this.jetstreamClient = this.createJetStreamClient(this.connection!);
+          } catch (reconnectError: any) {
+            this.logger.error(`Failed to reconnect: ${reconnectError.message}`);
+          }
+
+          // Wait before retrying with exponential backoff
+          const delay = Math.pow(2, retryCount) * 100;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          this.logger.error(`Error publishing event: ${error.message}`);
+          throw error; // For non-503 errors, don't retry
+        }
+      }
+    }
+
+    // If we've exhausted all retries
+    if (lastError) {
+      this.logger.error(`Failed to publish event after ${maxRetries} retries: ${lastError.message}`);
+      throw lastError;
+    }
   }
 
   protected publish(packet: ReadPacket, callback: (packet: WritePacket) => void): typeof noop {
