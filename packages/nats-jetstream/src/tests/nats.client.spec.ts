@@ -95,6 +95,41 @@ describe("NatsClient", () => {
     });
   });
 
+  describe("createNatsConnection", () => {
+    it("should log connection attempt with the passed logger", async () => {
+      // Create a mock connection
+      const mockConnection = createMock<NatsConnection>();
+
+      // Spy on the connect function and mock its implementation
+      const connectSpy = jest.spyOn(require('nats'), 'connect')
+        .mockImplementation(() => Promise.resolve(mockConnection));
+
+      // Spy on the logger
+      const loggerSpy = jest.spyOn(client["logger"], "log");
+
+      // Call the method with different server configurations
+      await client.createNatsConnection({ servers: "nats://localhost:4222" });
+      expect(loggerSpy).toHaveBeenCalledWith("Connecting to NATS JetStream (nats://localhost:4222)...");
+
+      // Reset the spy
+      loggerSpy.mockClear();
+
+      // Test with array of servers
+      await client.createNatsConnection({ servers: ["nats://server1:4222", "nats://server2:4222"] });
+      expect(loggerSpy).toHaveBeenCalledWith("Connecting to NATS JetStream (nats://server1:4222, nats://server2:4222)...");
+
+      // Reset the spy
+      loggerSpy.mockClear();
+
+      // Test with no servers (default)
+      await client.createNatsConnection({});
+      expect(loggerSpy).toHaveBeenCalledWith("Connecting to NATS JetStream (nats://localhost)...");
+
+      // Restore the original implementation
+      connectSpy.mockRestore();
+    });
+  });
+
   describe("handleStatusUpdates", () => {
     it("should log debug events", async () => {
       const connection = {

@@ -1,5 +1,5 @@
 import { ClientProxy, ReadPacket, WritePacket } from '@nestjs/microservices';
-import { Logger, LoggerService } from '@nestjs/common';
+import { Logger, LoggerService, OnModuleInit } from '@nestjs/common';
 
 import { Codec, connect, ConnectionOptions, JetStreamClient, JSONCodec, NatsConnection } from 'nats';
 
@@ -27,11 +27,8 @@ export class NatsClient extends ClientProxy {
 
     this.connection = await this.createNatsConnection(this.options.connection);
     this.jetstreamClient = this.createJetStreamClient(this.connection);
-
-    await this.handleStatusUpdates(this.connection);
-
     this.logger.log(`Connected to ${this.connection.getServer()}`);
-
+    this.handleStatusUpdates(this.connection);
     return this.connection;
   }
 
@@ -49,6 +46,10 @@ export class NatsClient extends ClientProxy {
   }
 
   createNatsConnection(options: ConnectionOptions = {}): Promise<NatsConnection> {
+    const servers = Array.isArray(options.servers)
+      ? options.servers.join(', ')
+      : options.servers || 'nats://localhost';
+    this.logger.log(`Connecting to NATS JetStream (${servers})...`);
     return connect(options);
   }
 
