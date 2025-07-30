@@ -32,6 +32,7 @@ yarn-error.log
 /packages/**/.npmignore
 /packages/**/LICENSE
 *.tsbuildinfo
+COMMIT_MESSAGE.md
 
 # example
 /quick-start

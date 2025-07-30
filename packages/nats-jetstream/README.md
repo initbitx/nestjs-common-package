@@ -45,8 +45,21 @@ import { NatsJetStreamModule } from '@initbit/nestjs-jetstream';
       connection: {
         servers: ['nats://localhost:4222']
       },
-      streamName: 'my-stream',
-      durableName: 'my-consumer'
+      // Stream configuration with name, description and subjects
+      stream: {
+        name: 'my-stream', // Stream name should be part of stream options
+        description: 'My stream for processing orders',
+        subjects: ['orders.*', 'users.events']
+      },
+      // Consumer configuration with name and other options
+      consumerOptions: {
+        name: 'my-consumer', // Consumer name should be part of consumer options
+        durable: true, // Set to false for ephemeral consumers
+        max_deliver: 10, // Maximum delivery attempts
+        ack_wait: 30_000_000_000 // 30 seconds in nanoseconds
+      },
+      // Queue group for load balancing
+      queue: 'processing-group'
     })
   ]
 })
@@ -70,8 +83,20 @@ import { NatsJetStreamModule } from '@initbit/nestjs-jetstream';
         connection: {
           servers: [configService.get<string>('NATS_URL') || 'nats://localhost:4222']
         },
-        streamName: configService.get<string>('NATS_STREAM') || 'my-stream',
-        durableName: configService.get<string>('NATS_CONSUMER') || 'my-consumer',
+        // Stream configuration with name, description and subjects
+        stream: {
+          name: configService.get<string>('NATS_STREAM') || 'my-stream',
+          description: configService.get<string>('NATS_STREAM_DESCRIPTION') || 'My stream for processing events',
+          subjects: configService.get<string[]>('NATS_STREAM_SUBJECTS') || ['events.*', 'notifications.*']
+        },
+        // Consumer configuration with name and other options
+        consumerOptions: {
+          name: configService.get<string>('NATS_CONSUMER') || 'my-consumer',
+          durable: configService.get<boolean>('NATS_CONSUMER_DURABLE') !== false,
+          max_deliver: configService.get<number>('NATS_MAX_DELIVER') || 10,
+          ack_wait: configService.get<number>('NATS_ACK_WAIT_NS') || 30_000_000_000 // 30 seconds in nanoseconds
+        },
+        // Queue group for load balancing
         queue: configService.get<string>('NATS_QUEUE')
       })
     })
@@ -168,15 +193,24 @@ import { DeliverPolicy, AckPolicy } from 'nats';
       connection: {
         servers: ['nats://localhost:4222']
       },
-      streamName: 'my-stream',
-      durableName: 'my-consumer',
-      // Advanced consumer options
-      deliverPolicy: DeliverPolicy.New,
-      ackPolicy: AckPolicy.Explicit,
-      ackWait: 30, // 30 seconds
-      filterSubject: 'orders.created',
-      // Or use multiple filter subjects
-      filterSubjects: ['orders.created', 'orders.updated']
+      // Stream configuration
+      stream: {
+        name: 'my-stream',
+        subjects: ['orders.*', 'users.*'] // Define subjects for the stream
+      },
+      // Advanced consumer configuration
+      consumerOptions: {
+        name: 'my-consumer',
+        deliver_policy: DeliverPolicy.New,
+        ack_policy: AckPolicy.Explicit,
+        ack_wait: 30_000_000_000, // 30 seconds in nanoseconds
+        filter_subject: 'orders.created',
+        // Or use multiple filter subjects
+        filter_subjects: ['orders.created', 'orders.updated'],
+        // Additional consumer options
+        max_deliver: 10,
+        max_ack_pending: 100
+      }
     })
   ]
 })
@@ -246,15 +280,34 @@ The `NatsJetStreamOptions` interface provides the following configuration option
 - `codec`: NATS codec for encoding and decoding messages
 - `consumer`: Function to configure JetStream consumer options
 - `queue`: Queue group name for NATS queue subscriptions
-- `streamName`: JetStream stream name
-- `durableName`: JetStream durable consumer name
 
-### Advanced Consumer Options
-- `deliverPolicy`: Delivery policy for the consumer (e.g., DeliverPolicy.All, DeliverPolicy.New)
-- `ackPolicy`: Acknowledgment policy for the consumer (e.g., AckPolicy.Explicit, AckPolicy.None)
-- `ackWait`: How long to wait for an acknowledgment (in seconds)
-- `filterSubject`: A single subject to filter messages from the stream
-- `filterSubjects`: Multiple subjects to filter messages from the stream
+### Stream Configuration (Recommended Approach)
+- `stream`: Configuration options for the NATS stream
+  - `name`: Name of the stream (replaces top-level `streamName`)
+  - `description`: Description of the stream
+  - `subjects`: Array of subjects associated with the stream (if not provided, defaults to ['*', '>'])
+
+### Consumer Configuration (Recommended Approach)
+- `consumerOptions`: Configuration options for the NATS consumer
+  - `name`: Name of the consumer (replaces top-level `durableName`)
+  - `durable`: Whether this consumer should be durable (if false, name will be ignored)
+  - `deliver_policy`: Delivery policy for the consumer (e.g., DeliverPolicy.All, DeliverPolicy.New)
+  - `ack_policy`: Acknowledgment policy for the consumer (e.g., AckPolicy.Explicit, AckPolicy.None)
+  - `ack_wait`: How long to wait for an acknowledgment (in nanoseconds)
+  - `filter_subject`: A single subject to filter messages from the stream
+  - `filter_subjects`: Multiple subjects to filter messages from the stream
+  - Plus any other properties from the NATS ConsumerConfig interface (max_deliver, max_ack_pending, etc.)
+
+### Legacy Options (Deprecated)
+- `streamName`: **DEPRECATED** - JetStream stream name (use `stream.name` instead)
+- `durableName`: **DEPRECATED** - JetStream durable consumer name (use `consumerOptions.name` instead)
+- `deliverPolicy`: **DEPRECATED** - Delivery policy for the consumer (use `consumerOptions.deliver_policy` instead)
+- `ackPolicy`: **DEPRECATED** - Acknowledgment policy for the consumer (use `consumerOptions.ack_policy` instead)
+- `ackWait`: **DEPRECATED** - How long to wait for an acknowledgment in seconds (use `consumerOptions.ack_wait` in nanoseconds instead)
+- `filterSubject`: **DEPRECATED** - A single subject to filter messages (use `consumerOptions.filter_subject` instead)
+- `filterSubjects`: **DEPRECATED** - Multiple subjects to filter messages (use `consumerOptions.filter_subjects` instead)
+
+> **Important**: These legacy options are now officially deprecated and will be removed in the next major release. Please migrate to the recommended structured options as soon as possible.
 
 ## Technical Requirements
 
@@ -291,6 +344,12 @@ The following improvements are planned for future releases:
 ## Recent Improvements
 
 The following improvements have been implemented in recent releases:
+
+### Deprecated Legacy Registration Options
+- Legacy registration options have been officially deprecated and will be removed in the next major release
+- This includes: `streamName`, `durableName`, `deliverPolicy`, `ackPolicy`, `ackWait`, `filterSubject`, and `filterSubjects`
+- Users should migrate to the structured options (`stream` and `consumerOptions`) as soon as possible
+- The library will continue to support legacy options until the next major release for backward compatibility
 
 ### NestJS Application Logger Integration
 - The package now properly integrates with NestJS application logger

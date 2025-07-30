@@ -1,10 +1,11 @@
 import { CustomTransportStrategy, MessageHandler, Server } from '@nestjs/microservices';
 import { Logger, LoggerService } from '@nestjs/common';
 
-import { AckPolicy, Codec, connect, ConsumerConfig, consumerOpts, ConsumerOptsBuilder, createInbox, DeliverPolicy, JetStreamClient, JetStreamManager, JsMsg, JSONCodec, Msg, NatsConnection, NatsError, ReplayPolicy } from 'nats';
+import { AckPolicy, Codec, connect, ConsumerConfig, consumerOpts, ConsumerOptsBuilder, createInbox, DeliverPolicy, DiscardPolicy, JetStreamClient, JetStreamManager, JsMsg, JSONCodec, Msg, NatsConnection, NatsError, ReplayPolicy, RetentionPolicy, StorageType, StreamConfig } from 'nats';
 
 import { NatsContext } from './nats.context';
 import { NACK, TERM } from './nats.constants';
+import { ConsumerOptions, StreamOptions } from './interfaces/nats-jetstream-options.interface';
 
 export class JetStream extends Server implements CustomTransportStrategy {
 
@@ -19,8 +20,8 @@ export class JetStream extends Server implements CustomTransportStrategy {
   constructor(
     private readonly options: {
       servers: string | string[],
-      streamName: string,
-      durableName: string,
+      streamName?: string,
+      durableName?: string,
       queue?: string,
       consumer?: (consumerOptions: ConsumerOptsBuilder) => void,
       deliverPolicy?: DeliverPolicy,
@@ -28,11 +29,41 @@ export class JetStream extends Server implements CustomTransportStrategy {
       ackWait?: number,
       filterSubject?: string,
       filterSubjects?: string[],
-      logger?: LoggerService
+      logger?: LoggerService,
+      // New options
+      stream?: StreamOptions,
+      consumerOptions?: ConsumerOptions
     }
   ) {
     super();
-    this.durableName = options.durableName;
+
+    // For backward compatibility, use durableName from options if consumerOptions.name is not provided
+    this.durableName = options.consumerOptions?.name || options.durableName || 'default';
+
+    // If stream.name is provided but streamName is not, set streamName from stream.name
+    if (options.stream?.name && !options.streamName) {
+      this.options.streamName = options.stream.name;
+    }
+    // If streamName is provided but stream.name is not, create/update stream object
+    else if (options.streamName && options.stream && !options.stream.name) {
+      // Ensure this.options.stream is defined before accessing its properties
+      if (!this.options.stream) {
+        this.options.stream = { name: options.streamName };
+      } else {
+        this.options.stream.name = options.streamName;
+      }
+    }
+    // If neither is provided, set a default
+    else if (!options.streamName && (!options.stream || !options.stream.name)) {
+      this.options.streamName = 'default';
+      if (!this.options.stream) {
+        this.options.stream = { name: 'default' };
+      } else {
+        this.options.stream.name = 'default';
+      }
+    }
+
+    // Initialize logger
     this.logger = options.logger || new Logger(JetStream.name);
 
     // Ensure servers is always an array
@@ -80,26 +111,80 @@ export class JetStream extends Server implements CustomTransportStrategy {
 
   async ensureStream(jsm: JetStreamManager) {
     try {
-      // Use wildcard subject without streamName prefix to capture all patterns
-      await jsm.streams.add({ name: this.options.streamName, subjects: [ '*', '>' ] });
-      this.logger.log(`Stream "${this.options.streamName}" created.`);
-    } catch (err: any) {
-      if (err.message.includes('already in use')) {
-        this.logger.log(`Stream "${this.options.streamName}" already exists.`);
-      } else {
-        this.logger.error(`Error creating stream: ${err.message}`);
+      // Get stream name from the appropriate source
+      const streamName = this.options.stream?.name || this.options.streamName || 'default';
+
+      // Create stream configuration
+      const streamConfig: StreamConfig = {
+        name: streamName,
+        subjects: this.options.stream?.subjects || [ '*', '>' ],
+        retention: RetentionPolicy.Limits,
+        storage: StorageType.File,
+        max_consumers: 0,
+        sealed: false,
+        first_seq: 0,
+        max_msgs_per_subject: 0,
+        max_msgs: 0,
+        max_age: 0,
+        max_bytes: 0,
+        max_msg_size: 0,
+        discard: DiscardPolicy.Old,
+        discard_new_per_subject: false,
+        duplicate_window: 0,
+        allow_rollup_hdrs: false,
+        num_replicas: 0,
+        deny_delete: false,
+        deny_purge: false,
+        allow_direct: false,
+        mirror_direct: false
+      };
+
+      // Add description if provided
+      if (this.options.stream?.description) {
+        streamConfig.description = this.options.stream.description;
       }
+
+      // Check if stream exists
+      try {
+        const existingStream = await jsm.streams.info(streamName);
+
+        // If stream exists, update it with new config
+        if (existingStream) {
+          await jsm.streams.update(streamName, streamConfig);
+          this.logger.log(`Stream "${streamName}" updated.`);
+        }
+      } catch (error) {
+        // Stream doesn't exist, create it
+        await jsm.streams.add(streamConfig);
+        this.logger.log(`Stream "${streamName}" created.`);
+      }
+    } catch (err: any) {
+      this.logger.error(`Error creating/updating stream: ${err.message}`);
     }
   }
 
   async ensureConsumer(jsm: JetStreamManager) {
     try {
+      // Get stream name from the appropriate source
+      const streamName = this.options.stream?.name || this.options.streamName || 'default';
+
+      // Get consumer name from the appropriate source
+      const consumerName = this.options.consumerOptions?.name || this.durableName;
+
+      // Start with base consumer config
       const consumerConfig: ConsumerConfig = {
-        durable_name: this.durableName,
         ack_policy: this.options.ackPolicy || AckPolicy.Explicit,
         deliver_policy: this.options.deliverPolicy || DeliverPolicy.All,
         replay_policy: ReplayPolicy.Original
       };
+
+      // Check if we should create a durable consumer
+      const isDurable = this.options.consumerOptions?.durable !== false;
+
+      // Add durable_name if this is a durable consumer
+      if (isDurable && consumerName) {
+        consumerConfig.durable_name = consumerName;
+      }
 
       // Add ackWait if specified
       if (this.options.ackWait !== undefined) {
@@ -116,21 +201,55 @@ export class JetStream extends Server implements CustomTransportStrategy {
         consumerConfig.filter_subjects = this.options.filterSubjects;
       }
 
-      await jsm.consumers.add(this.options.streamName, consumerConfig);
-      this.logger.log(`Durable consumer "${this.durableName}" set up.`);
-    } catch (err: any) {
-      if (err.message.includes('already in use')) {
-        this.logger.log(`Durable consumer "${this.durableName}" already exists.`);
-      } else {
-        this.logger.error(`Error creating consumer: ${err.message}`);
+      // Apply any additional consumer options
+      if (this.options.consumerOptions) {
+        // Merge consumer options, excluding 'durable' and 'name' which are handled separately
+        const { durable, name, ...restOptions } = this.options.consumerOptions;
+        Object.assign(consumerConfig, restOptions);
       }
+
+      // Create or update the consumer
+      try {
+        // Check if consumer exists (for durable consumers)
+        if (isDurable && consumerName) {
+          try {
+            await jsm.consumers.info(streamName, consumerName);
+            // Consumer exists, update it
+            await jsm.consumers.update(streamName, consumerName, consumerConfig);
+            this.logger.log(`Durable consumer "${consumerName}" updated.`);
+          } catch (error) {
+            // Consumer doesn't exist, create it
+            await jsm.consumers.add(streamName, consumerConfig);
+            this.logger.log(`Durable consumer "${consumerName}" created.`);
+          }
+        } else {
+          // For non-durable consumers, always create a new one
+          await jsm.consumers.add(streamName, consumerConfig);
+          this.logger.log(`Ephemeral consumer created.`);
+        }
+      } catch (err: any) {
+        this.logger.error(`Error creating/updating consumer: ${err.message}`);
+      }
+    } catch (err: any) {
+      this.logger.error(`Error setting up consumer: ${err.message}`);
     }
   }
 
   subscribeToTopics(js: JetStreamClient) {
-    for (const pattern of this.messageHandlers.keys()) {
+    // Log all patterns
+    /*for (const pattern of this.messageHandlers.keys()) {
       // Use the pattern directly without appending streamName
       this.logger.log(`Subscribed to: ${pattern}`);
+    }*/
+
+    // Subscribe to event patterns using JetStream
+    this.subscribeToEventPatterns(js);
+
+    // Subscribe to message patterns using the NATS connection
+    if (this.nc) {
+      this.subscribeToMessagePatterns(this.nc);
+    } else {
+      this.logger.error('NATS connection not established. Cannot subscribe to message patterns.');
     }
   }
 
@@ -171,6 +290,88 @@ export class JetStream extends Server implements CustomTransportStrategy {
     });
   }
 
+  async subscribeToEventPatterns(client: JetStreamClient): Promise<void> {
+    const eventHandlers = [ ...this.messageHandlers.entries() ].filter(
+      ([ , handler ]) => handler.isEventHandler
+    );
+
+    // Get stream name from the appropriate source
+    const streamName = this.options.stream?.name || this.options.streamName || 'default';
+
+    for (const [ pattern, handler ] of eventHandlers) {
+      // Create a direct ConsumerOpts object instead of using the builder
+      const consumerOptions: Partial<ConsumerConfig> = {
+        deliver_subject: createInbox(),
+        ack_policy: AckPolicy.Explicit,
+        filter_subject: pattern
+      };
+
+      // Apply any custom consumer options if provided
+      if (this.options.consumer) {
+        const tempBuilder = consumerOpts();
+        this.options.consumer(tempBuilder);
+        // We can't access the built options directly, so we'll rely on the client to merge them
+      }
+
+      // Create a callback function for handling messages
+      const callbackFn = (error: NatsError | null, message: JsMsg | null): void => {
+        if (error) {
+          this.logger.error(error.message, error.stack);
+          return;
+        }
+
+        if (message) {
+          // Call handleJetStreamMessage but don't return its Promise
+          this.handleJetStreamMessage(message, handler).catch(err => {
+            this.logger.error(`Error handling JetStream message: ${err.message}`, err.stack);
+          });
+        }
+      };
+
+      try {
+        // Use client.subscribe with the pattern, passing the stream name as part of the options
+        // The NATS client will handle merging these options with any provided by the consumer function
+        await client.subscribe(pattern, {
+          config: consumerOptions,
+          stream: streamName,
+          mack: true, // Enable manual ack
+          callbackFn
+        });
+
+        this.logger.log(`Subscribed to ${pattern} events in stream ${streamName}`);
+      } catch (error) {
+        if (!(error instanceof NatsError) || !error.isJetStreamError()) {
+          throw error;
+        }
+
+        if (error.message === 'no stream matches subject') {
+          throw new Error(`Cannot find stream with the ${pattern} event pattern. Make sure the stream "${streamName}" includes this subject.`);
+        }
+      }
+    }
+  }
+
+  subscribeToMessagePatterns(connection: NatsConnection): void {
+    const messageHandlers = [ ...this.messageHandlers.entries() ].filter(
+      ([ , handler ]) => !handler.isEventHandler
+    );
+
+    for (const [ pattern, handler ] of messageHandlers) {
+      connection.subscribe(pattern, {
+        callback: (error, message) => {
+          if (error) {
+            return this.logger.error(error.message, error.stack);
+          }
+
+          return this.handleNatsMessage(message, handler);
+        },
+        queue: this.options.queue
+      });
+
+      this.logger.log(`Subscribed to ${pattern} messages`);
+    }
+  }
+
   async handleStatusUpdates(connection: NatsConnection): Promise<void> {
     for await (const status of connection.status()) {
       const data = typeof status.data === 'object' ? JSON.stringify(status.data) : status.data;
@@ -200,69 +401,6 @@ export class JetStream extends Server implements CustomTransportStrategy {
           this.logger?.verbose?.(message);
           break;
       }
-    }
-  }
-
-  async subscribeToEventPatterns(client: JetStreamClient): Promise<void> {
-    const eventHandlers = [ ...this.messageHandlers.entries() ].filter(
-      ([ , handler ]) => handler.isEventHandler
-    );
-
-    for (const [ pattern, handler ] of eventHandlers) {
-      const consumerOptions = consumerOpts();
-
-      if (this.options.consumer) {
-        this.options.consumer(consumerOptions);
-      }
-
-      consumerOptions.callback((error, message) => {
-        if (error) {
-          return this.logger.error(error.message, error.stack);
-        }
-
-        if (message) {
-          return this.handleJetStreamMessage(message, handler);
-        }
-      });
-
-      consumerOptions.deliverTo(createInbox());
-
-      consumerOptions.manualAck();
-
-      try {
-        await client.subscribe(pattern, consumerOptions);
-
-        this.logger.log(`Subscribed to ${pattern} events`);
-      } catch (error) {
-        if (!(error instanceof NatsError) || !error.isJetStreamError()) {
-          throw error;
-        }
-
-        if (error.message === 'no stream matches subject') {
-          throw new Error(`Cannot find stream with the ${pattern} event pattern`);
-        }
-      }
-    }
-  }
-
-  subscribeToMessagePatterns(connection: NatsConnection): void {
-    const messageHandlers = [ ...this.messageHandlers.entries() ].filter(
-      ([ , handler ]) => !handler.isEventHandler
-    );
-
-    for (const [ pattern, handler ] of messageHandlers) {
-      connection.subscribe(pattern, {
-        callback: (error, message) => {
-          if (error) {
-            return this.logger.error(error.message, error.stack);
-          }
-
-          return this.handleNatsMessage(message, handler);
-        },
-        queue: this.options.queue
-      });
-
-      this.logger.log(`Subscribed to ${pattern} messages`);
     }
   }
 }

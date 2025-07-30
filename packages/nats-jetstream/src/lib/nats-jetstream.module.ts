@@ -79,10 +79,26 @@ export class NatsJetStreamModule {
       inject: [APP_LOGGER],
       useFactory: (logger: LoggerService) => {
         const servers = options.connection?.servers || 'nats://localhost';
+
+        // Prepare stream options
+        let streamOpts = options.stream || {};
+        if (options.streamName) {
+          // If streamName is provided at top level, ensure it's also in stream.name
+          streamOpts = { ...streamOpts, name: options.streamName };
+        }
+
+        // Prepare consumer options
+        let consumerOpts = options.consumerOptions || {};
+        if (options.durableName) {
+          // If durableName is provided at top level, ensure it's also in consumerOptions.name
+          consumerOpts = { ...consumerOpts, name: options.durableName };
+        }
+
         return new JetStream({
           servers: servers,
-          streamName: options.streamName || 'default',
-          durableName: options.durableName || 'default',
+          // Keep these for backward compatibility
+          streamName: options.streamName,
+          durableName: options.durableName,
           queue: options.queue,
           deliverPolicy: options.deliverPolicy,
           ackPolicy: options.ackPolicy,
@@ -90,6 +106,9 @@ export class NatsJetStreamModule {
           filterSubject: options.filterSubject,
           filterSubjects: options.filterSubjects,
           consumer: options.consumer,
+          // Updated options
+          stream: streamOpts,
+          consumerOptions: consumerOpts,
           logger
         });
       }
@@ -143,10 +162,26 @@ export class NatsJetStreamModule {
       inject: [JETSTREAM_OPTIONS, APP_LOGGER],
       useFactory: (options: NatsJetStreamOptions, logger: LoggerService) => {
         const servers = options.connection?.servers || 'nats://localhost';
+
+        // Prepare stream options
+        let streamOpts = options.stream || {};
+        if (options.streamName) {
+          // If streamName is provided at top level, ensure it's also in stream.name
+          streamOpts = { ...streamOpts, name: options.streamName };
+        }
+
+        // Prepare consumer options
+        let consumerOpts = options.consumerOptions || {};
+        if (options.durableName) {
+          // If durableName is provided at top level, ensure it's also in consumerOptions.name
+          consumerOpts = { ...consumerOpts, name: options.durableName };
+        }
+
         return new JetStream({
           servers: servers,
-          streamName: options.streamName || 'default',
-          durableName: options.durableName || 'default',
+          // Keep these for backward compatibility
+          streamName: options.streamName,
+          durableName: options.durableName,
           queue: options.queue,
           deliverPolicy: options.deliverPolicy,
           ackPolicy: options.ackPolicy,
@@ -154,6 +189,9 @@ export class NatsJetStreamModule {
           filterSubject: options.filterSubject,
           filterSubjects: options.filterSubjects,
           consumer: options.consumer,
+          // Updated options
+          stream: streamOpts,
+          consumerOptions: consumerOpts,
           logger
         });
       }
