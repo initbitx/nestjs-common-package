@@ -106,15 +106,13 @@ export class NatsClient extends ClientProxy {
       this.jetstreamClient = this.createJetStreamClient(this.connection!);
     }
 
-    // Throw error if jetstream client is still undefined after initialization attempt
+    // Throw error if a jetstream client is still undefined after an initialization attempt
     if (!this.jetstreamClient) {
       throw new Error('JetStream client is undefined');
     }
 
     const payload = this.codec.encode(packet.data);
     const subject = this.normalizePattern(packet.pattern);
-
-    this.logger.log(`Dispatching event to subject: ${subject}`);
 
     // Add retry logic with exponential backoff
     const maxRetries = 3;

@@ -1,5 +1,6 @@
 import { AckPolicy, Codec, ConnectionOptions, ConsumerConfig, ConsumerOptsBuilder, DeliverPolicy } from "nats";
 import { LoggerService } from "@nestjs/common";
+import { JetStreamMapper } from '../jetstream.types';
 
 /**
  * Stream configuration options
@@ -128,4 +129,17 @@ export interface NatsJetStreamOptions {
    * Logger service to use for logging
    */
   logger?: LoggerService;
+
+  /**
+   * Optional custom mapper for incoming messages.
+   */
+  mapper?: JetStreamMapper;
+
+  /**
+   * Default mapper to use if no custom mapper is provided.
+   * - 'subject': Maps NATS subject to handler key, and decoded data to handler payload.
+   * - 'envelope': Assumes a message envelope and maps its `type` to handler key.
+   * @default 'subject'
+   */
+  defaultMapper?: 'subject' | 'envelope';
 }

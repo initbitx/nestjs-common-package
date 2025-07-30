@@ -2,11 +2,13 @@ import { BaseRpcContext } from "@nestjs/microservices/ctx-host/base-rpc.context"
 
 import { JsMsg, Msg, MsgHdrs } from "nats";
 
-type NatsContextArgs = [JsMsg | Msg];
+type NatsContextArgs = [JsMsg | Msg, Record<string, any> | undefined];
 
 export class NatsContext extends BaseRpcContext<NatsContextArgs> {
+  private extras?: Record<string, any>;
   constructor(args: NatsContextArgs) {
     super(args);
+    this.extras = args[1];
   }
 
   /**
@@ -90,5 +92,12 @@ export class NatsContext extends BaseRpcContext<NatsContextArgs> {
       throw new Error('Cannot get metadata from a non-JetStream message');
     }
     return (this.args[0] as JsMsg).info;
+  }
+
+  /**
+   * Returns the extras object.
+   */
+  getExtras(): Record<string, any> | undefined {
+    return this.extras;
   }
 }

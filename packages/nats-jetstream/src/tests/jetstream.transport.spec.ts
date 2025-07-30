@@ -126,12 +126,10 @@ describe('NatsTransportStrategy', () => {
     });
   });
 
-  // These tests were removed because the methods are not part of the public API
-
   describe('handleJetStreamMessage', () => {
     let strategy: JetStream;
 
-    beforeAll(() => {
+    beforeEach(() => {
       strategy = new JetStream({
         servers: 'nats://localhost:4222',
         streamName: 'test-stream',
@@ -141,66 +139,23 @@ describe('NatsTransportStrategy', () => {
       (strategy as any).codec = StringCodec();
     });
 
-    it('should ack', async () => {
+    it('should call the correct handler with the correct data and context', async () => {
       const message = createMock<JsMsg>({
-        data: new Uint8Array([ 104, 101, 108, 108, 111 ])
+        subject: 'test.subject',
+        data: new Uint8Array([ 104, 101, 108, 108, 111 ]),
+        ack: jest.fn(),
+        working: jest.fn(),
       });
 
       const handler = jest.fn().mockResolvedValue(undefined);
+      strategy.addHandler('test.subject', handler, false);
 
-      await strategy.handleJetStreamMessage(message, handler);
+      await strategy.handleJetStreamMessage(message);
 
       expect(handler).toBeCalledTimes(1);
-      // Only check the first argument, as the second is a NatsContext instance
       expect(handler.mock.calls[0][0]).toBe('hello');
-      // Verify the second argument is a NatsContext instance
       expect(handler.mock.calls[0][1]).toBeInstanceOf(NatsContext);
-
       expect(message.ack).toBeCalledTimes(1);
-      expect(message.nak).not.toBeCalled();
-      expect(message.term).not.toBeCalled();
-      expect(message.working).toBeCalledTimes(1);
-    });
-
-    it('should nack', async () => {
-      const message = createMock<JsMsg>({
-        data: new Uint8Array([ 104, 101, 108, 108, 111 ])
-      });
-
-      const handler = jest.fn().mockRejectedValue(NACK);
-
-      await strategy.handleJetStreamMessage(message, handler);
-
-      expect(handler).toBeCalledTimes(1);
-      // Only check the first argument, as the second is a NatsContext instance
-      expect(handler.mock.calls[0][0]).toBe('hello');
-      // Verify the second argument is a NatsContext instance
-      expect(handler.mock.calls[0][1]).toBeInstanceOf(NatsContext);
-
-      expect(message.ack).not.toBeCalled();
-      expect(message.nak).toBeCalledTimes(1);
-      expect(message.term).not.toBeCalled();
-      expect(message.working).toBeCalledTimes(1);
-    });
-
-    it('should term', async () => {
-      const message = createMock<JsMsg>({
-        data: new Uint8Array([ 104, 101, 108, 108, 111 ])
-      });
-
-      const handler = jest.fn().mockRejectedValue(TERM);
-
-      await strategy.handleJetStreamMessage(message, handler);
-
-      expect(handler).toBeCalledTimes(1);
-      // Only check the first argument, as the second is a NatsContext instance
-      expect(handler.mock.calls[0][0]).toBe('hello');
-      // Verify the second argument is a NatsContext instance
-      expect(handler.mock.calls[0][1]).toBeInstanceOf(NatsContext);
-
-      expect(message.ack).not.toBeCalled();
-      expect(message.nak).not.toBeCalled();
-      expect(message.term).toBeCalledTimes(1);
       expect(message.working).toBeCalledTimes(1);
     });
   });

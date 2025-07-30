@@ -92,7 +92,7 @@ import { NatsJetStreamModule } from '@initbit/nestjs-jetstream';
         // Consumer configuration with name and other options
         consumerOptions: {
           name: configService.get<string>('NATS_CONSUMER') || 'my-consumer',
-          durable: configService.get<boolean>('NATS_CONSUMER_DURABLE') !== false,
+          durable: configService.get<boolean>('NATS_CONSUMER_DURABLE') === 'true',
           max_deliver: configService.get<number>('NATS_MAX_DELIVER') || 10,
           ack_wait: configService.get<number>('NATS_ACK_WAIT_NS') || 30_000_000_000 // 30 seconds in nanoseconds
         },
@@ -176,6 +176,54 @@ export class AppService {
     return this.client.emit('user.created', user);
   }
 }
+```
+### Custom Message Mapping
+
+The transport provides a flexible message mapping system that allows you to control how incoming NATS messages are mapped to NestJS handlers. You can choose between two default mappers or provide your own custom mapper function.
+
+#### Default Mappers
+
+- `subject` (default): This mapper uses the NATS message subject as the handler key. The entire decoded message data is passed as the handler payload.
+- `envelope`: This mapper assumes the message is in a specific envelope format with a `type` property. It uses the `type` property as the handler key and the `payload` property as the handler payload.
+
+You can select the default mapper using the `defaultMapper` option:
+
+```typescript
+NatsJetStreamModule.register({
+  // ... other options
+  defaultMapper: 'envelope'
+})
+```
+
+#### Custom Mapper Function
+
+For more advanced scenarios, you can provide a custom `mapper` function. This function takes the NATS message (`JsMsg`) and the decoded data as input and should return an object with `handlerKey` and `data` properties.
+
+```typescript
+import { JsMsg } from 'nats';
+import { JetStreamMapper } from '@initbit/nestjs-jetstream';
+
+const customMapper: JetStreamMapper = (msg: JsMsg, decoded: unknown) => {
+  // Your custom logic to determine the handler key and data
+  if ((decoded as any).eventType) {
+    return {
+      handlerKey: (decoded as any).eventType,
+      data: (decoded as any).eventData,
+      ctxExtras: (decoded as any).meta,
+    };
+  }
+  return { handlerKey: msg.subject, data: decoded };
+};
+
+@Module({
+  imports: [
+    NatsJetStreamModule.register({
+      // ... other options
+      mapper: customMapper,
+    }),
+  ],
+})
+export class AppModule {}
 ```
 
 ### Advanced Consumer Configuration
@@ -280,6 +328,11 @@ The `NatsJetStreamOptions` interface provides the following configuration option
 - `codec`: NATS codec for encoding and decoding messages
 - `consumer`: Function to configure JetStream consumer options
 - `queue`: Queue group name for NATS queue subscriptions
+- `logger`: Logger service to use for logging
+
+### Message Mapping Options
+- `mapper`: Custom mapper function for incoming messages (see [Custom Message Mapping](#custom-message-mapping))
+- `defaultMapper`: Default mapper to use if no custom mapper is provided. Can be 'subject' (default) or 'envelope'
 
 ### Stream Configuration (Recommended Approach)
 - `stream`: Configuration options for the NATS stream
@@ -368,9 +421,22 @@ The following improvements have been implemented in recent releases:
 - Event patterns like `@EventPattern('domain.user.greet')` now subscribe correctly without modification
 - Stream configuration now uses wildcard subjects (`*`, `>`) to capture all patterns
 
+### Subscription Registration Helper
+- When subscribing to subject patterns, the transport now stores a mapping between the subject and handler key if envelope mapping is selected
+- This ensures that even if the `type` in an incoming message doesn't match a handler key directly, the transport can still find the correct handler based on the subscription subject
+- This provides greater flexibility and backward compatibility for applications using envelope-based routing
+
+### Custom Message Mapping
+- Added support for custom message mapping through the `mapper` option
+- Introduced `defaultMapper` option to choose between 'subject' (default) and 'envelope' mapping strategies
+- Custom mappers allow complete control over how NATS messages are mapped to NestJS handlers
+- Envelope mapper provides backward compatibility for message envelope patterns with `type` and `payload` properties
+- Subject-to-handler mapping system ensures correct routing when using envelope mode with different subject patterns
+
 ### Configuration Options
 - Added `logger` option to `NatsJetStreamOptions` and `NatsClientOptions` interfaces
 - Updated the module to properly inject and use the provided logger
+- Added `mapper` and `defaultMapper` options for custom message mapping
 
 ## Building
 

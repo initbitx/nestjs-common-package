@@ -6,6 +6,7 @@ import { AckPolicy, Codec, connect, ConsumerConfig, consumerOpts, ConsumerOptsBu
 import { NatsContext } from './nats.context';
 import { NACK, TERM } from './nats.constants';
 import { ConsumerOptions, StreamOptions } from './interfaces/nats-jetstream-options.interface';
+import { JetStreamMapper, JetStreamEnvelope } from './jetstream.types';
 
 export class JetStream extends Server implements CustomTransportStrategy {
 
@@ -16,6 +17,8 @@ export class JetStream extends Server implements CustomTransportStrategy {
   protected codec: Codec<unknown> = JSONCodec();
   protected readonly durableName: string;
   private eventHandlers = new Map<string, Function>();
+  // Map to store subject pattern -> handler key mappings for envelope mode
+  private subjectToHandlerMapping = new Map<string, string>();
 
   constructor(
     private readonly options: {
@@ -32,7 +35,9 @@ export class JetStream extends Server implements CustomTransportStrategy {
       logger?: LoggerService,
       // New options
       stream?: StreamOptions,
-      consumerOptions?: ConsumerOptions
+      consumerOptions?: ConsumerOptions,
+      mapper?: JetStreamMapper,
+      defaultMapper?: 'subject' | 'envelope'
     }
   ) {
     super();
@@ -69,6 +74,42 @@ export class JetStream extends Server implements CustomTransportStrategy {
     // Ensure servers is always an array
     if (typeof this.options.servers === 'string') {
       this.options.servers = [this.options.servers];
+    }
+
+    // If no custom mapper is provided, set a default mapper based on the `defaultMapper` option
+    if (!this.options.mapper) {
+      if (this.options.defaultMapper === 'envelope') {
+        // Envelope-based mapping
+        this.options.mapper = (msg: JsMsg, decoded: unknown) => {
+          const envelope = decoded as JetStreamEnvelope;
+          // If envelope is invalid, fallback to subject-based routing
+          if (!envelope || typeof envelope.type !== 'string') {
+            this.logger.warn(`Received message without a valid envelope. Falling back to subject-based routing.`);
+            return { handlerKey: msg.subject, data: decoded };
+          }
+
+          // To preserve backward compatibility, we first check for an exact match on the handler key (envelope.type)
+          // This is because older versions of the library relied on this behavior
+          if (this.messageHandlers.has(envelope.type)) {
+            return { handlerKey: envelope.type, data: envelope.payload, ctxExtras: envelope.meta };
+          }
+
+          // If no direct match is found, use the subject-to-handler mapping to find the correct handler
+          const handlerKey = this.subjectToHandlerMapping.get(msg.subject);
+          if (handlerKey) {
+            return { handlerKey: handlerKey, data: envelope.payload, ctxExtras: envelope.meta };
+          }
+
+          // If no mapping is found, fallback to subject-based routing as a last resort
+          this.logger.warn(`No handler found for message type "${envelope.type}". Falling back to subject-based routing.`);
+          return { handlerKey: msg.subject, data: decoded };
+        };
+      } else {
+        // Default subject-based mapping
+        this.options.mapper = (msg: JsMsg, decoded: unknown) => {
+          return { handlerKey: msg.subject, data: decoded };
+        };
+      }
     }
   }
 
@@ -107,6 +148,36 @@ export class JetStream extends Server implements CustomTransportStrategy {
 
   unwrap<T>(value?: T): T {
     return <T>value;
+  }
+
+  /**
+   * Override addHandler to store subject-to-handler mapping when envelope mapping is used
+   */
+  override addHandler(pattern: any, callback: MessageHandler, isEventHandler?: boolean, extras?: Record<string, any>): void {
+    // Call parent implementation to maintain existing behavior
+    super.addHandler(pattern, callback, isEventHandler, extras);
+
+    // If envelope mapping is enabled, store the mapping between subject pattern and handler key
+    if (this.options.defaultMapper === 'envelope' && isEventHandler) {
+      const normalizedPattern = this.normalizePattern(pattern);
+
+      // For envelope mode, we need to determine the handler key
+      // If extras contains a handlerKey, use that; otherwise use the pattern
+      const handlerKey = extras?.['handlerKey'] || normalizedPattern;
+
+      // Store the mapping
+      this.subjectToHandlerMapping.set(normalizedPattern, handlerKey);
+
+      this.logger?.debug?.(`Stored subject-to-handler mapping: ${normalizedPattern} -> ${handlerKey}`);
+    }
+  }
+
+  /**
+   * Get the subject-to-handler mapping for debugging and testing purposes
+   * @returns Map of subject patterns to handler keys
+   */
+  getSubjectToHandlerMapping(): Map<string, string> {
+    return new Map(this.subjectToHandlerMapping);
   }
 
   async ensureStream(jsm: JetStreamManager) {
@@ -253,34 +324,67 @@ export class JetStream extends Server implements CustomTransportStrategy {
     }
   }
 
-  async handleJetStreamMessage(message: JsMsg, handler: MessageHandler): Promise<void> {
-    const decoded = this.codec.decode(message.data);
-
+  async handleJetStreamMessage(message: JsMsg): Promise<void> {
     message.working();
 
-    try {
-      await handler(decoded, new NatsContext([ message ]))
-        .then((maybeObservable) => this.transformToObservable(maybeObservable))
-        .then((observable) => observable.toPromise());
+    // 1. Decode message once
+    const decoded = this.codec.decode(message.data);
 
+    // 2. Invoke selected mapper to obtain { handlerKey, data } with try/catch for fail-fast & nak
+    let handlerKey: string;
+    let data: any;
+    let ctxExtras: any;
+
+    try {
+      const mapperResult = this.options.mapper!(message, decoded);
+      handlerKey = mapperResult.handlerKey;
+      data = mapperResult.data;
+      ctxExtras = mapperResult.ctxExtras;
+    } catch (error) {
+      this.logger.error(`Error in mapper: ${error}`, (error as Error).stack);
+      message.nak(); // Fail fast and nak on mapper error
+      return;
+    }
+
+    // 3. Resolve the handler via this.messageHandlers.get(handlerKey) (fallback error if none)
+    const handler = this.messageHandlers.get(handlerKey);
+    if (!handler) {
+      this.logger.warn(`No handler for message with key: ${handlerKey}`);
+      message.term(); // No handler, so terminate
+      return;
+    }
+
+    // 4. Forward data & contextual NatsContext (augmented with ctxExtras) to handler
+    // 5. Preserve current ack / nak / term logic
+    try {
+      const context = new NatsContext([message, ctxExtras]);
+
+      await this.invokeHandler(handler, data, context);
       message.ack();
     } catch (error) {
       if (error === NACK) {
-        return message.nak();
+        message.nak();
+      } else if (error === TERM) {
+        message.term();
+      } else {
+        this.logger.error(`Error handling message: ${error}`, (error as Error).stack);
+        // Depending on the desired behavior, you might want to NACK or TERM on unknown errors.
+        // For now, we will let it be handled by the NATS redelivery policy.
       }
-
-      if (error === TERM) {
-        return message.term();
-      }
-
-      throw error;
     }
+  }
+
+
+  private async invokeHandler(handler: MessageHandler, data: any, context: NatsContext): Promise<void> {
+    const maybeObservable = await handler(data, context);
+    const response$ = this.transformToObservable(maybeObservable);
+    return response$.toPromise();
   }
 
   async handleNatsMessage(message: Msg, handler: MessageHandler): Promise<void> {
     const decoded = this.codec.decode(message.data);
 
-    const maybeObservable = await handler(decoded, new NatsContext([ message ]));
+    const maybeObservable = await handler(decoded, new NatsContext([ message, undefined ]));
     const response$ = this.transformToObservable(maybeObservable);
 
     this.send(response$, (response) => {
@@ -321,8 +425,7 @@ export class JetStream extends Server implements CustomTransportStrategy {
         }
 
         if (message) {
-          // Call handleJetStreamMessage but don't return its Promise
-          this.handleJetStreamMessage(message, handler).catch(err => {
+          this.handleJetStreamMessage(message).catch((err) => {
             this.logger.error(`Error handling JetStream message: ${err.message}`, err.stack);
           });
         }

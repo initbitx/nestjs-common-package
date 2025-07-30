@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `filterSubject` (use `consumerOptions.filter_subject` instead)
   - `filterSubjects` (use `consumerOptions.filter_subjects` instead)
 - Updated README.md to document the deprecated options and provide migration guidance
+- Changed behavior of `durable` option in consumer configuration to require explicit 'true' string value when reading from environment variables
+
+### Fixed
+- Fixed issue with boolean environment variable parsing for consumer durable option
 
 ## [1.1.0] - 2023-11-15
 
