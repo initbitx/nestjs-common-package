@@ -1,8 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
+    "outDir": "../../dist/packages/nats-jetstream/lib",
     "declaration": true,
+    "declarationDir": "../../dist/packages/nats-jetstream/lib",
+    "rootDir": "./src",
     "types": ["node"],
     "target": "es2021",
     "strictNullChecks": true,

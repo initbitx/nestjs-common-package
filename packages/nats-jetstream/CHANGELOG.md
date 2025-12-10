@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-12-16
+
+### Added
+- Support for server-side consumer filtering using `filter_subject` and `filter_subjects` in per-stream `streamConsumers` configuration
+- Example application demonstrating multi-stream configuration and filtered durable consumers
+
+### Changed
+- Removed plain NATS fallback subscriptions: transport now prefers server-side JetStream consumers and expects publishers to use JetStream (e.g. `js.publish`) for event publishing
+- Improved multi-stream registration and remapping behavior to handle overlapping streams and remap pattern-to-stream mappings when necessary
+- README updated to document JetStream-first behavior and `filter_subjects` usage
+
+### Fixed
+- Handle consumer creation failures more gracefully and fall back to client-side deliver-subscriptions only when server-side consumers cannot be created
+
 ## [1.2.0] - 2025-07-31
 
 ### Added

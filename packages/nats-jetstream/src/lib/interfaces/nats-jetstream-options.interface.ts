@@ -19,7 +19,8 @@ export interface StreamOptions {
 
   /**
    * Subjects associated with the stream
-   * If not provided, defaults to ['*', '>']
+   * If not provided, defaults to ['*']
+   * Note: Using '>' wildcard can cause deliver subject cycle errors
    */
   subjects?: string[];
 }
@@ -37,9 +38,56 @@ export interface ConsumerOptions extends Partial<ConsumerConfig> {
   /**
    * Whether this consumer should be durable
    * If false, name/durable_name will be ignored
-   * @default true
+   * @default true for event patterns, false for message patterns
    */
   durable?: boolean;
+}
+
+/**
+ * Options for configuring the ConsumerHealthService
+ */
+export interface ConsumerHealthOptions {
+  /** Monitoring interval in milliseconds (default: 30000) */
+  monitoringIntervalMs?: number;
+  /** Pending messages threshold to mark error (default: 1000) */
+  pendingThreshold?: number;
+  /** Redelivered messages threshold to mark error (default: 100) */
+  redeliveryThreshold?: number;
+  /** Idle timeout in milliseconds to mark idle (default: 300000 / 5min) */
+  idleTimeoutMs?: number;
+  /** Cache TTL in milliseconds for health entries (default: 15min) */
+  cacheTtlMs?: number;
+}
+
+/**
+ * Multi-stream configuration options
+ */
+export interface MultiStreamOptions {
+  /**
+   * Array of stream configurations
+   */
+  streams: StreamOptions[];
+
+  /**
+   * Default stream name for backward compatibility
+   */
+  defaultStream?: string;
+
+  /**
+   * Mapping of event patterns to specific streams
+   */
+  patternToStream?: Map<string, string>;
+
+  /**
+   * Consumer configuration per stream
+   * Allows different consumer settings for each stream
+   */
+  streamConsumers?: Map<string, ConsumerOptions>;
+
+  /**
+   * Whether to register streams asynchronously
+   */
+  asyncRegistration?: boolean;
 }
 
 export interface NatsJetStreamOptions {
@@ -89,6 +137,11 @@ export interface NatsJetStreamOptions {
    * Consumer configuration options
    */
   consumerOptions?: ConsumerOptions;
+
+  /**
+   * Application name for consumer naming
+   */
+  appName?: string;
 
   /**
    * Delivery policy for the consumer
@@ -142,4 +195,15 @@ export interface NatsJetStreamOptions {
    * @default 'subject'
    */
   defaultMapper?: 'subject' | 'envelope';
+
+  /**
+   * Multi-stream configuration
+   * If provided, overrides single stream configuration
+   */
+  multiStream?: MultiStreamOptions;
+
+  /**
+   * Options for consumer health monitoring service
+   */
+  consumerHealth?: ConsumerHealthOptions;
 }

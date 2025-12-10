@@ -7,3 +7,7 @@ export * from './lib/jetstream.types';
 export * from './lib/interfaces/nats-client-options.interface';
 export * from './lib/interfaces/nats-jetstream-options.interface';
 export * from './lib/interfaces/nats-stream-config.interface';
+export * from './lib/interfaces/consumer-health.interface';
+export * from './lib/consumer-health.service';
+export * from './lib/consumer-naming.strategy';
+export * from './lib/stream.manager';

@@ -21,6 +21,9 @@ This document outlines a comprehensive improvement plan for the NATS JetStream i
 - Incomplete error handling in some areas
 - Missing TypeScript type definitions for some interfaces
 - No comprehensive test coverage
+- **Ephemeral consumers for event patterns causing message loss on restarts**
+- **Single stream limitation restricting application flexibility**
+- **Inefficient consumer reuse mechanism for durable consumers**
 
 ## Improvement Plan
 
@@ -37,6 +40,9 @@ This document outlines a comprehensive improvement plan for the NATS JetStream i
 - **Enhance Error Handling**: Improve error handling with more specific error types and better error messages
 - **Add Type Safety**: Enhance TypeScript type definitions for better developer experience
 - **Implement Missing Features**: Complete any missing features required by the requirements
+- **Implement Durable Consumers for Event Patterns**: Make durable consumers the default for event patterns to ensure message persistence
+- **Add Multi-Stream Support**: Support multiple streams per module with sync/async registration
+- **Enhance Consumer Management**: Improve consumer reuse, naming strategies, and lifecycle management
 
 ### 2. Documentation Enhancements
 
@@ -86,16 +92,22 @@ This document outlines a comprehensive improvement plan for the NATS JetStream i
 
 ## Implementation Roadmap
 
-### Phase 1: Critical Fixes (Immediate Priority)
+### Phase 1: Critical Fixes and Durable Consumers (Immediate Priority)
 - Fix critical bugs in the codebase
 - Address inconsistencies in the API
 - Improve basic documentation
+- **Implement durable consumers for event patterns**
+- **Enhance consumer caching mechanism**
+- **Add consumer naming strategies**
 
-### Phase 2: Core Enhancements (Short-term)
+### Phase 2: Multi-Stream Support and Core Enhancements (Short-term)
 - Implement missing features
 - Enhance error handling
 - Improve type definitions
 - Increase test coverage
+- **Add multi-stream support with sync/async registration**
+- **Implement pattern-to-stream mapping**
+- **Add stream management utilities**
 
 ### Phase 3: Performance and Developer Experience (Medium-term)
 - Optimize performance for high-throughput scenarios

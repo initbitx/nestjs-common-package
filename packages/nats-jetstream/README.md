@@ -16,6 +16,8 @@ This package provides a custom transport strategy for NestJS applications to com
 
 - Connect to NATS JetStream with configurable options
 - Create and manage streams and consumers
+- **Multi-stream support** with pattern-based routing
+- **Consumer caching** for improved efficiency and resource usage
 - Handle JetStream messages with acknowledgments
 - Support for request-response patterns
 - Support for event-based patterns
@@ -26,6 +28,11 @@ This package provides a custom transport strategy for NestJS applications to com
 - Graceful shutdown and connection draining
 - Advanced consumer configuration options (DeliverPolicy, AckPolicy, etc.)
 - Direct access to NATS API through NatsContext
+- **Enhanced logging integration** with NestJS application logger
+- Server-side consumer filtering via `filter_subject` / `filter_subjects` for durable consumers
+
+Note: this transport no longer creates a plain `nc.subscribe(pattern, ...)` fallback for event patterns. Consumers are expected to be JetStream consumers (server-side) and publishers should send events using JetStream (e.g., `js.publish(...)`) to ensure proper JetStream semantics (durable storage, acknowledgments, redelivery, etc.). For quick CLI testing you can still publish using the JetStream API (or configure a small dev-only fallback), but the library's default behavior is JetStream-first.
+***
 
 ## Usage
 
@@ -60,6 +67,63 @@ import { NatsJetStreamModule } from '@initbit/nestjs-jetstream';
       },
       // Queue group for load balancing
       queue: 'processing-group'
+    })
+  ]
+})
+export class AppModule {}
+```
+
+#### Multi-Stream Registration
+
+```typescript
+import { Module } from '@nestjs/common';
+import { NatsJetStreamModule } from '@initbit/nestjs-jetstream';
+
+@Module({
+  imports: [
+    NatsJetStreamModule.register({
+      connection: {
+        servers: ['nats://localhost:4222']
+      },
+      // Multi-stream configuration
+      multiStream: {
+        streams: [
+          {
+            name: 'orders-stream',
+            description: 'Stream for order processing',
+            subjects: ['orders.*']
+          },
+          {
+            name: 'users-stream',
+            description: 'Stream for user events',
+            subjects: ['users.*']
+          }
+        ],
+        defaultStream: 'orders-stream',
+        // Map specific patterns to streams
+        patternToStream: new Map([
+          ['orders.created', 'orders-stream'],
+          ['users.registered', 'users-stream']
+        ]),
+        // Consumer configuration per stream
+        streamConsumers: new Map([
+          ['orders-stream', {
+            name: 'orders-consumer',
+            durable: true,
+            max_deliver: 5,
+            // Server-side filter: only receive these subjects for this consumer
+            filter_subjects: ['orders.created']
+          }],
+          ['users-stream', {
+            name: 'users-consumer',
+            durable: true,
+            max_deliver: 3,
+            filter_subjects: ['users.registered']
+          }]
+        ]),
+        // Register streams asynchronously for better performance
+        asyncRegistration: true
+      }
     })
   ]
 })
@@ -149,6 +213,17 @@ export class AppController {
   handleUserCreated(data: any) {
     console.log('User created:', data);
   }
+
+  // Handle multi-stream patterns
+  @EventPattern('orders.created')
+  handleOrderCreated(data: any) {
+    console.log('Order created:', data);
+  }
+
+  @EventPattern('users.registered')
+  handleUserRegistered(data: any) {
+    console.log('User registered:', data);
+  }
 }
 ```
 
@@ -177,6 +252,7 @@ export class AppService {
   }
 }
 ```
+
 ### Custom Message Mapping
 
 The transport provides a flexible message mapping system that allows you to control how incoming NATS messages are mapped to NestJS handlers. You can choose between two default mappers or provide your own custom mapper function.
@@ -265,56 +341,140 @@ import { DeliverPolicy, AckPolicy } from 'nats';
 export class AppModule {}
 ```
 
-### Using NatsContext for NATS API Access
+### Example: Multi-Stream with durable consumers
 
-The NatsContext provides direct access to the underlying NATS API:
+The following example shows a full NestJS module registration that configures two streams and durable consumers for each stream. It also includes a minimal controller that demonstrates how to handle messages coming from durable consumers and use `NatsContext` to `ack()` / `nack()` / `term()` messages.
 
 ```typescript
-import { Controller } from '@nestjs/common';
+import { Module, Injectable, Controller } from '@nestjs/common';
+import { NatsJetStreamModule, NatsClient, JETSTREAM_CLIENT, ConsumerHealthService, NatsContext } from '@initbit/nestjs-jetstream';
 import { EventPattern, Ctx } from '@nestjs/microservices';
-import { NatsContext } from '@initbit/nestjs-jetstream';
+import { DeliverPolicy, AckPolicy } from 'nats';
 
+@Module({
+  imports: [
+    NatsJetStreamModule.register({
+      connection: { servers: ['nats://localhost:4222'] },
+
+      // Configure multi-stream topology
+      multiStream: {
+        streams: [
+          {
+            name: 'orders-stream',
+            description: 'Stream for order events',
+            subjects: ['orders.*']
+          },
+          {
+            name: 'users-stream',
+            description: 'Stream for user events',
+            subjects: ['users.*']
+          }
+        ],
+
+        // map specific patterns to streams
+        patternToStream: new Map<string, string>([
+          ['orders.created', 'orders-stream'],
+          ['orders.updated', 'orders-stream'],
+          ['users.registered', 'users-stream']
+        ]),
+
+        // define durable consumers per-stream
+        streamConsumers: new Map<string, any>([
+          ['orders-stream', {
+            name: 'orders-durable-consumer',
+            durable: true,
+            // high-throughput friendly defaults
+            ack_wait: 30_000_000_000, // 30s in ns
+            deliver_policy: DeliverPolicy.New,
+            ack_policy: AckPolicy.Explicit,
+            max_deliver: 10,
+            max_ack_pending: 500,
+            // Server-side filter subjects for this durable consumer
+            filter_subjects: ['orders.created']
+          }],
+          ['users-stream', {
+            name: 'users-durable-consumer',
+            durable: true,
+            ack_wait: 30_000_000_000,
+            deliver_policy: DeliverPolicy.All,
+            ack_policy: AckPolicy.Explicit,
+            max_deliver: 5,
+            max_ack_pending: 200,
+            filter_subjects: ['users.registered']
+          }]
+        ])
+      },
+
+      // optional: provide an application name used for naming when needed
+      appName: 'my-app'
+    })
+  ]
+})
+export class AppModule {}
+
+// Controller that handles events routed to streams above
 @Controller()
-export class OrdersController {
+export class EventsController {
+  // An order created event will be routed to the orders-stream and handled by this method
   @EventPattern('orders.created')
-  async handleOrderCreated(data: any, @Ctx() context: NatsContext) {
+  async handleOrderCreated(data: any, @Ctx() ctx: NatsContext) {
     try {
-      // Check if this is a JetStream message
-      if (context.isJetStream()) {
-        // Mark the message as being worked on (extends ack wait time)
-        context.working();
-        
-        // Get JetStream metadata
-        const metadata = context.getMetadata();
-        console.log('Stream:', metadata.stream);
-        console.log('Consumer:', metadata.consumer);
-        console.log('Delivered:', metadata.delivered.count);
-        
-        // Process the message
-        await this.processOrder(data);
-        
-        // Acknowledge the message on success
-        context.ack();
-      } else {
-        // Handle regular NATS message
-        console.log('Regular NATS message:', data);
+      // Business logic
+      console.log('Processing order.created:', data);
+
+      // Acknowledge on success (durable consumer)
+      if (ctx.isJetStream()) ctx.ack();
+    } catch (err: any) {
+      // For retryable errors, negative-ack; for terminal errors, terminate
+      if (ctx.isJetStream()) {
+        if (err && err.retryable) ctx.nack();
+        else ctx.term();
       }
-    } catch (error) {
-      if (context.isJetStream()) {
-        if (error.retryable) {
-          // Negative acknowledge for retryable errors (will be redelivered)
-          context.nack();
-        } else {
-          // Terminate for non-retryable errors (will not be redelivered)
-          context.term();
-        }
-      }
-      throw error;
+      throw err;
     }
   }
 
-  private async processOrder(order: any) {
-    // Process the order...
+  @EventPattern('users.registered')
+  async handleUserRegistered(data: any, @Ctx() ctx: NatsContext) {
+    try {
+      console.log('Processing users.registered:', data);
+      if (ctx.isJetStream()) ctx.ack();
+    } catch (err: any) {
+      if (ctx.isJetStream()) {
+        if (err && err.retryable) ctx.nack();
+        else ctx.term();
+      }
+      throw err;
+    }
+  }
+}
+```
+
+Notes and best-practices for durable consumers
+
+- Use durable consumers when you need at-least-once processing and stable consumer state across restarts. Durable consumers keep track of the last acknowledged sequence.
+- Configure `ack_wait` in nanoseconds (the NATS JetStream API expects nanoseconds) — in the example above we use 30_000_000_000 to represent 30 seconds.
+- `max_deliver` controls how many times a message will be redelivered on failures; set it according to your retry strategy.
+- `max_ack_pending` allows you to tune how many un-acked messages can be outstanding — useful for throughput tuning.
+- When using envelope-based messages, the module will still map patterns to the configured streams via `patternToStream`.
+
+Querying consumer health
+
+If you need to monitor durable consumers, inject `ConsumerHealthService` (exported by the module) and subscribe to health updates:
+
+```typescript
+@Injectable()
+export class DurableConsumerMonitor {
+  constructor(private readonly consumerHealthService: ConsumerHealthService) {
+    // subscribe to updates
+    this.consumerHealthService.onHealthUpdate(this.onUpdate.bind(this));
+  }
+
+  onUpdate(health: any) {
+    // react to unhealthy consumers (alerts, metrics, scaling)
+    if (health.status !== 'active') {
+      console.warn('Consumer unhealthy', health);
+    }
   }
 }
 ```
@@ -340,6 +500,14 @@ The `NatsJetStreamOptions` interface provides the following configuration option
   - `description`: Description of the stream
   - `subjects`: Array of subjects associated with the stream (if not provided, defaults to ['*', '>'])
 
+### Multi-Stream Configuration (New Feature)
+- `multiStream`: Configuration for multiple streams
+  - `streams`: Array of stream configurations
+  - `defaultStream`: Default stream name for backward compatibility
+  - `patternToStream`: Mapping of event patterns to specific streams
+  - `streamConsumers`: Consumer configuration per stream
+  - `asyncRegistration`: Whether to register streams asynchronously
+
 ### Consumer Configuration (Recommended Approach)
 - `consumerOptions`: Configuration options for the NATS consumer
   - `name`: Name of the consumer (replaces top-level `durableName`)
@@ -350,6 +518,9 @@ The `NatsJetStreamOptions` interface provides the following configuration option
   - `filter_subject`: A single subject to filter messages from the stream
   - `filter_subjects`: Multiple subjects to filter messages from the stream
   - Plus any other properties from the NATS ConsumerConfig interface (max_deliver, max_ack_pending, etc.)
+
+### Application Configuration
+- `appName`: Application name for consumer naming (defaults to 'nestjs-app')
 
 ### Legacy Options (Deprecated)
 - `streamName`: **DEPRECATED** - JetStream stream name (use `stream.name` instead)
@@ -397,6 +568,40 @@ The following improvements are planned for future releases:
 ## Recent Improvements
 
 The following improvements have been implemented in recent releases:
+
+### Performance Optimizations and Developer Experience (v1.3.0)
+- **High-Throughput Message Processing**: Optimized message handling for better performance in high-load scenarios
+- **Enhanced Connection Management**: Improved connection handling with better error recovery and resource cleanup
+- **Optimized Consumer Management**: More efficient consumer creation and subscription handling
+- **Consumer Health Monitoring**: New tools to monitor and report on consumer health metrics
+- **Developer-Friendly APIs**: Intuitive interfaces for working with streams and consumers
+- **Comprehensive Error Handling**: Better error messages and recovery strategies
+
+### Status Updates Handling (v1.2.1)
+- **Bug Fix**: Fixed potential infinite loop in handleStatusUpdates method
+- **Memory Leak Prevention**: Added proper termination conditions for status update loop
+- **Error Handling**: Improved error handling with try/catch/finally blocks
+- **Connection Monitoring**: Added connection state monitoring to properly end status updates
+
+### Multi-Stream Support (v1.2.0)
+- **New Feature**: Support for multiple streams with pattern-based routing
+- **StreamManager**: Dedicated class for managing multiple streams and their consumers
+- **Pattern Mapping**: Map specific event patterns to dedicated streams
+- **Per-Stream Consumers**: Configure different consumer settings for each stream
+- **Async Registration**: Option to register streams asynchronously for better performance
+- **Backward Compatibility**: Maintains compatibility with single-stream configurations
+
+### Consumer Caching Mechanism (v1.2.0)
+- **Performance Improvement**: Consumer caching to reuse consumers with the same inbox or deliver_subject
+- **Resource Efficiency**: Reduces resource usage by sharing consumers across multiple event patterns
+- **Durable Consumer Support**: Proper handling of durable consumers with cache key including durable name
+- **Stream-Pattern Mapping**: Efficient consumer reuse based on stream name and pattern combinations
+
+### Enhanced Configuration Options (v1.2.0)
+- **Structured Options**: New structured `stream` and `consumerOptions` configuration objects
+- **Multi-Stream Configuration**: New `multiStream` option for complex multi-stream setups
+- **Application Naming**: `appName` option for better consumer naming and identification
+- **Improved Type Safety**: Better TypeScript interfaces and type definitions
 
 ### Deprecated Legacy Registration Options
 - Legacy registration options have been officially deprecated and will be removed in the next major release

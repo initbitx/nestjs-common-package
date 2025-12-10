@@ -28,16 +28,16 @@
   ],
   "license": "MIT",
   "type": "commonjs",
-  "main": "./src/index.js",
-  "types": "./src/index.d.ts",
+  "main": "./lib/src/index.js",
+  "types": "./lib/src/index.d.ts",
   "files": [
-    "src/**/*"
+    "lib/**/*"
   ],
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.lib.json",
     "prepublish": "npm run build",
     "test": "jest"
   },

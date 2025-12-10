@@ -8,6 +8,7 @@ import { NatsClient } from './nats.client';
 import { JetStream } from './jetstream.transport';
 import { JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT } from './nats.constants';
 import { NatsJetStreamOptions } from './interfaces/nats-jetstream-options.interface';
+import { ConsumerHealthService } from './consumer-health.service';
 
 @Module({
   imports: [
@@ -26,26 +27,6 @@ import { NatsJetStreamOptions } from './interfaces/nats-jetstream-options.interf
         })
       }
     ])
-  ],
-  providers: [
-    {
-      provide: JETSTREAM_TRANSPORT,
-      inject: [ ConfigService ],
-      useFactory: async (config: ConfigService) => {
-        const servers = config.get<string | string[]>('nats.uri') || 'nats://localhost';
-        return new JetStream({
-          servers: servers,
-          streamName: config.get<string>('nats.stream') || 'hello.*',
-          durableName: config.get<string>('nats.consumer') || 'APP_SERVICE',
-          queue: config.get<string>('nats.queue'),
-          deliverPolicy: config.get<DeliverPolicy>('nats.deliverPolicy'),
-          ackPolicy: config.get<AckPolicy>('nats.ackPolicy'),
-          ackWait: config.get<number>('nats.ackWait'),
-          filterSubject: config.get<string>('nats.filterSubject'),
-          filterSubjects: config.get<string[]>('nats.filterSubjects')
-        });
-      }
-    }
   ],
   exports: [ JETSTREAM_TRANSPORT, JETSTREAM_CLIENT ]
 })
@@ -109,8 +90,26 @@ export class NatsJetStreamModule {
           // Updated options
           stream: streamOpts,
           consumerOptions: consumerOpts,
+          // Pass through multiStream configuration when provided
+          multiStream: options.multiStream,
           logger
         });
+      }
+    };
+
+    const healthServiceProvider = {
+      provide: ConsumerHealthService,
+      inject: [JETSTREAM_TRANSPORT],
+      useFactory: async (transport: JetStream) => {
+        // Initialize the transport to ensure JetStreamManager is available
+        await transport.initialize();
+
+        // Create the health service using the JetStreamManager from the transport
+        const manager = transport.getManager?.();
+        if (!manager) {
+          throw new Error('JetStreamManager is not initialized');
+        }
+        return new ConsumerHealthService(manager, options.consumerHealth);
       }
     };
 
@@ -123,9 +122,10 @@ export class NatsJetStreamModule {
         },
         loggerProvider,
         clientProvider,
-        transportProvider
+        transportProvider,
+        healthServiceProvider
       ],
-      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT, APP_LOGGER]
+      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT, APP_LOGGER, ConsumerHealthService]
     };
   }
 
@@ -192,8 +192,26 @@ export class NatsJetStreamModule {
           // Updated options
           stream: streamOpts,
           consumerOptions: consumerOpts,
+          // Pass through multiStream configuration when provided
+          multiStream: options.multiStream,
           logger
         });
+      }
+    };
+
+    const healthServiceProvider = {
+      provide: ConsumerHealthService,
+      inject: [JETSTREAM_TRANSPORT, JETSTREAM_OPTIONS],
+      useFactory: async (transport: JetStream, options: NatsJetStreamOptions) => {
+        // Initialize the transport to ensure JetStreamManager is available
+        await transport.initialize();
+
+        // Create the health service using the JetStreamManager from the transport
+        const manager = transport.getManager?.();
+        if (!manager) {
+          throw new Error('JetStreamManager is not initialized');
+        }
+        return new ConsumerHealthService(manager, options.consumerHealth);
       }
     };
 
@@ -208,9 +226,10 @@ export class NatsJetStreamModule {
         },
         loggerProvider,
         clientProvider,
-        transportProvider
+        transportProvider,
+        healthServiceProvider
       ],
-      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT, APP_LOGGER]
+      exports: [JETSTREAM_OPTIONS, JETSTREAM_CLIENT, JETSTREAM_TRANSPORT, APP_LOGGER, ConsumerHealthService]
     };
   }
 }

@@ -25,6 +25,13 @@ This document outlines the requirements for the NATS JetStream integration with 
 - Create and manage durable consumers
 - Support various delivery and replay policies
 - Handle stream and consumer errors appropriately
+- **Support multiple streams per module (sync/async registration)**
+- **Default durable consumers for event patterns to ensure message persistence**
+- **Consumer reuse and caching for efficient resource management**
+- **Pattern-to-stream mapping for logical event separation**
+- **Multiple durable consumers (one per stream) for proper isolation**
+- **Stream-specific consumer configurations for granular control**
+- **Subject-based consumer selection for event subscriptions**
 
 ### Message Handling
 - Support publishing messages to NATS subjects
@@ -60,3 +67,6 @@ This document outlines the requirements for the NATS JetStream integration with 
 - Support custom consumer options
 - Provide hooks for extending functionality
 - Design for future enhancements and additional features
+- **Support custom consumer naming strategies**
+- **Allow custom stream management policies**
+- **Provide consumer health monitoring hooks**
