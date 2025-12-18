@@ -64,11 +64,12 @@ describe("NatsContext", () => {
       expect(ackFn).toHaveBeenCalledTimes(1);
     });
 
-    it("should throw error when calling ack on non-JetStream message", () => {
+    it("should be a no-op when calling ack on non-JetStream message", () => {
       const regularMessage = createMock<Msg>();
       const context = new NatsContext([regularMessage, undefined]);
 
-      expect(() => context.ack()).toThrow('Cannot acknowledge a non-JetStream message');
+      // Should not throw - just silently do nothing for push-based consumers
+      expect(() => context.ack()).not.toThrow();
     });
 
     it("should call nack on JetStream message", () => {
@@ -84,11 +85,12 @@ describe("NatsContext", () => {
       expect(nakFn).toHaveBeenCalledTimes(1);
     });
 
-    it("should throw error when calling nack on non-JetStream message", () => {
+    it("should be a no-op when calling nack on non-JetStream message", () => {
       const regularMessage = createMock<Msg>();
       const context = new NatsContext([regularMessage, undefined]);
 
-      expect(() => context.nack()).toThrow('Cannot negative acknowledge a non-JetStream message');
+      // Should not throw - just silently do nothing for push-based consumers
+      expect(() => context.nack()).not.toThrow();
     });
 
     it("should call term on JetStream message", () => {
@@ -154,25 +156,25 @@ describe("NatsContext", () => {
     it('should return extras when provided', () => {
       const message = createMock<Msg>();
       const extras = { customData: 'test', userId: 123 };
-      
+
       const context = new NatsContext([message, extras]);
-      
+
       expect(context.getExtras()).toEqual(extras);
     });
 
     it('should return undefined when no extras provided', () => {
       const message = createMock<Msg>();
-      
+
       const context = new NatsContext([message, undefined]);
-      
+
       expect(context.getExtras()).toBeUndefined();
     });
 
     it('should return undefined when extras is explicitly undefined', () => {
       const message = createMock<Msg>();
-      
+
       const context = new NatsContext([message, undefined]);
-      
+
       expect(context.getExtras()).toBeUndefined();
     });
   });

@@ -617,8 +617,8 @@ describe('NatsTransportStrategy', () => {
 
       expect(client.subscribe).toBeCalledTimes(1);
       const callArgs = client.subscribe.mock.calls[0];
-      // The durable name is set internally, we just verify the subscription was created
-      expect(callArgs[0]).toMatch(/^_INBOX\./);
+      // For explicit ack consumers, subscription should be to the pattern directly (not delivery subject)
+      expect(callArgs[0]).toBe('events.user.created');
     });
 
     it('should handle stream manager errors gracefully', async () => {

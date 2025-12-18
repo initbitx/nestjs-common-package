@@ -7,7 +7,8 @@ import {
   ReplayPolicy,
   RetentionPolicy,
   StorageType,
-  DiscardPolicy
+  DiscardPolicy,
+  createInbox
 } from 'nats';
 import { StreamOptions, MultiStreamOptions, ConsumerOptions } from './interfaces/nats-jetstream-options.interface';
 import { LoggerService } from '@nestjs/common';
@@ -251,12 +252,26 @@ export class StreamManager {
       const consumerConfig: ConsumerConfig = {
         ack_policy: consumerOptions.ack_policy || AckPolicy.Explicit,
         deliver_policy: consumerOptions.deliver_policy || DeliverPolicy.All,
-        replay_policy: ReplayPolicy.Original
+        replay_policy: consumerOptions.replay_policy || ReplayPolicy.Original
       };
+
+      // Set consumer name (separate from durable_name if provided)
+      if (consumerOptions.name) {
+        (consumerConfig as any).name = consumerOptions.name;
+      }
+
+      // For multi-stream setup, use push-based consumers with deliver_subject
+      // Generate a unique deliver subject for this consumer
+      const deliverSubject = createInbox();
 
       // Add durable_name if this is a durable consumer
       if (consumerOptions.durable !== false && consumerOptions.name) {
         consumerConfig.durable_name = consumerOptions.name;
+        // Even durable consumers need deliver_subject for push-based delivery
+        consumerConfig.deliver_subject = deliverSubject;
+      } else {
+        // For non-durable consumers, we always need a deliver_subject
+        consumerConfig.deliver_subject = deliverSubject;
       }
 
       // Add ackWait if specified
@@ -274,8 +289,25 @@ export class StreamManager {
         consumerConfig.filter_subjects = consumerOptions.filter_subjects;
       }
 
-      // Add other consumer options
-      Object.assign(consumerConfig, consumerOptions);
+      // Apply additional consumer options, excluding fields already handled
+      const {
+        durable: _,
+        name: __,
+        deliver_subject: ___,
+        ack_policy: ____,
+        deliver_policy: _____,
+        replay_policy: ______,
+        ack_wait: _______,
+        filter_subject: ________,
+        filter_subjects: _________,
+        max_waiting: __________,  // Exclude max_waiting (only valid for pull-based consumers)
+        ...restOptions
+      } = consumerOptions;
+
+      Object.assign(consumerConfig, restOptions);
+
+      // Note: max_waiting is only valid for pull-based consumers and is excluded above
+      // backoff is valid for both push and pull consumers, so it's included in restOptions
 
       // Create or update the consumer
       try {

@@ -41,22 +41,26 @@ export class NatsContext extends BaseRpcContext<NatsContextArgs> {
 
   /**
    * Acknowledges the message (JetStream only).
-   * @throws Error if the message is not a JetStream message
+   * For push-based consumers, this is a no-op since the server-side consumer handles acknowledgment.
    */
   ack(): void {
     if (!this.isJetStream()) {
-      throw new Error('Cannot acknowledge a non-JetStream message');
+      // For push-based consumers receiving regular NATS messages from JetStream delivery subjects,
+      // acknowledgment is handled automatically by the server-side consumer, so this is a no-op.
+      return;
     }
     (this.args[0] as JsMsg).ack();
   }
 
   /**
    * Negative acknowledges the message, indicating it should be redelivered (JetStream only).
-   * @throws Error if the message is not a JetStream message
+   * For push-based consumers, this is a no-op since the server-side consumer handles acknowledgment.
    */
   nack(): void {
     if (!this.isJetStream()) {
-      throw new Error('Cannot negative acknowledge a non-JetStream message');
+      // For push-based consumers receiving regular NATS messages from JetStream delivery subjects,
+      // negative acknowledgment is not supported since the server-side consumer handles redelivery.
+      return;
     }
     (this.args[0] as JsMsg).nak();
   }

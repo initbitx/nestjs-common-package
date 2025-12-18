@@ -787,6 +787,8 @@ export class JetStream extends Server implements CustomTransportStrategy {
       // Add ackWait if specified
       if (this.options.ackWait !== undefined) {
         consumerConfig.ack_wait = this.options.ackWait * 1_000_000; // Convert to nanoseconds
+      } else if (this.options.consumerOptions?.ack_wait !== undefined) {
+        consumerConfig.ack_wait = this.options.consumerOptions.ack_wait * 1_000_000;
       }
 
       // Add filterSubject if specified
@@ -802,8 +804,16 @@ export class JetStream extends Server implements CustomTransportStrategy {
       // Apply any additional consumer options
       if (this.options.consumerOptions) {
         // Merge consumer options, excluding 'durable' and 'name' which are handled separately
-        const { durable: _, name: __, ...restOptions } = this.options.consumerOptions;
+        const { durable: _, name: __, deliver_subject: ___, ...restOptions } = this.options.consumerOptions;
         Object.assign(consumerConfig, restOptions);
+
+        // Handle specific additional configs that might not be in the base ConsumerConfig type
+        if (this.options.consumerOptions.max_waiting !== undefined) {
+          (consumerConfig as any).max_waiting = this.options.consumerOptions.max_waiting;
+        }
+        if (this.options.consumerOptions.backoff !== undefined) {
+          (consumerConfig as any).backoff = this.options.consumerOptions.backoff;
+        }
       }
 
       // Create or update the consumer
@@ -1147,6 +1157,7 @@ export class JetStream extends Server implements CustomTransportStrategy {
                   // eslint-disable-next-line prefer-destructuring
                   // Note: keep the original deliverSubject variable reference
                   (global as any).__jetstream_last_deliver_subject = existing.config.deliver_subject;
+                  this.logger.debug?.(`Using existing consumer deliver subject: ${existing.config.deliver_subject}`);
                 }
               } catch (_) {
                 // Consumer doesn't exist, create or update it
@@ -1166,8 +1177,14 @@ export class JetStream extends Server implements CustomTransportStrategy {
                 // Set durable_name only if this is a durable consumer
                 if (isDurable) {
                   consumerConfig.durable_name = consumerName;
+                  // For explicit ack consumers, don't use deliver_subject to get JetStream messages
+                  // For other durable consumers in multi-stream setup, use deliver_subject for push-based delivery
+                  const needsExplicitAck = streamConsumerOptions?.ack_policy === AckPolicy.Explicit;
+                  if (this.multiStreamOptions && !needsExplicitAck) {
+                    consumerConfig.deliver_subject = deliverSubject;
+                  }
                 } else {
-                  // For non-durable consumers, we need a deliver_subject
+                  // For non-durable consumers, we always need a deliver_subject
                   consumerConfig.deliver_subject = deliverSubject;
                 }
 
@@ -1193,11 +1210,20 @@ export class JetStream extends Server implements CustomTransportStrategy {
                 }
 
                 // Additional consumer configuration options
-                if (streamConsumerOptions?.max_waiting !== undefined) {
-                  (consumerConfig as any).max_waiting = streamConsumerOptions.max_waiting;
-                }
-                if (streamConsumerOptions?.backoff !== undefined) {
-                  (consumerConfig as any).backoff = streamConsumerOptions.backoff;
+                if (!this.multiStreamOptions) {
+                  // For single-stream (potentially pull-based) consumers, apply all options
+                  if (streamConsumerOptions?.max_waiting !== undefined) {
+                    (consumerConfig as any).max_waiting = streamConsumerOptions.max_waiting;
+                  }
+                  if (streamConsumerOptions?.backoff !== undefined) {
+                    (consumerConfig as any).backoff = streamConsumerOptions.backoff;
+                  }
+                } else {
+                  // For multi-stream push-based consumers, apply backoff but not max_waiting
+                  if (streamConsumerOptions?.backoff !== undefined) {
+                    (consumerConfig as any).backoff = streamConsumerOptions.backoff;
+                  }
+                  // max_waiting is excluded for push-based consumers
                 }
                 if (streamConsumerOptions?.inactive_threshold !== undefined) {
                   consumerConfig.inactive_threshold = streamConsumerOptions.inactive_threshold;
@@ -1222,59 +1248,103 @@ export class JetStream extends Server implements CustomTransportStrategy {
             }
           }
 
-          // Prefer the deliver subject returned by server-side consumer if present
+          // Prefer the deliver_subject returned by server-side consumer if present
           const serverDeliverSubject = (global as any).__jetstream_last_deliver_subject || deliverSubject;
+          const hasExistingConsumerDeliverSubject = !!(global as any).__jetstream_last_deliver_subject;
           delete (global as any).__jetstream_last_deliver_subject;
 
-          // Build consumer options for the client subscribe
-          const opts = consumerOpts();
-          opts.manualAck();
-          opts.ackExplicit();
-          // We do not set filterSubject on the client; server-side consumer filters messages
+          // Check if this consumer requires explicit acknowledgements
+          const requiresExplicitAck = isDurable && streamConsumerOptions?.ack_policy === AckPolicy.Explicit;
 
-          if (isDurable && consumerName) {
-            opts.durable(consumerName);
-          }
+          // For multi-stream with push-based consumers, subscribe directly to the deliver_subject
+          // For explicit ack consumers, there will be no delivery subject - use pull consumer approach
+          if (this.multiStreamOptions && hasExistingConsumerDeliverSubject && !requiresExplicitAck) {
+            // This is a push-based consumer for fire-and-forget scenarios (no explicit ack)
+            this.logger.debug?.(`Subscribing to push-based consumer delivery subject: ${serverDeliverSubject}`);
+            this.logger.debug?.(`Using regular NATS subscription for push consumer (fire-and-forget)`);
 
-          if (streamConsumerOptions) {
-            if (streamConsumerOptions.ack_wait !== undefined) {
-              opts.ackWait(streamConsumerOptions.ack_wait * 1_000_000);
+            const directSubscription = this.nc!.subscribe(serverDeliverSubject);
+
+            // Create minimal opts for cache compatibility
+            const directOpts = consumerOpts();
+            directOpts.manualAck();
+            directOpts.ackExplicit();
+            directOpts.deliverTo(serverDeliverSubject);
+            if (isDurable && consumerName) {
+              directOpts.durable(consumerName);
             }
-            if (streamConsumerOptions.ack_policy) {
-              opts.ackExplicit();
+
+            const subscriptionObj = {
+              consumer: directOpts,
+              subscription: directSubscription
+            };
+
+            subscription = subscriptionObj;
+            this.consumerCache.set(cacheKey, subscriptionObj);
+            this.processSubscription(directSubscription);
+            this.logger.log(`Subscribed to ${pattern} on stream ${streamName} with push-based consumer (fire-and-forget)`);
+          } else {
+            // Build consumer options for the client subscribe (for pull-based or fallback)
+            if (requiresExplicitAck) {
+              this.logger.debug?.(`Using pull-based consumer for explicit acknowledgement requirement`);
+            }
+            const opts = consumerOpts();
+            opts.manualAck();
+            opts.ackExplicit();
+
+            if (isDurable && consumerName) {
+              opts.durable(consumerName);
+            }
+
+            if (streamConsumerOptions) {
+              if (streamConsumerOptions.ack_wait !== undefined) {
+                opts.ackWait(streamConsumerOptions.ack_wait * 1_000_000);
+              }
+              if (streamConsumerOptions.ack_policy) {
+                opts.ackExplicit();
+              }
+            }
+
+            if (this.options.consumer) {
+              this.options.consumer(opts);
+            }
+
+            // For explicit ack consumers, don't set delivery subject - use direct subscription
+            if (!requiresExplicitAck) {
+              opts.deliverTo(serverDeliverSubject);
+            }
+
+            // Ensure client subscribe targets correct stream when supported
+            try {
+              if (typeof (opts as any).stream === 'function') {
+                (opts as any).stream(streamName);
+              }
+            } catch (_) { /* ignore */ }
+
+
+            // Use JetStream client's subscribe to receive JsMsg which preserve the original subject
+            // For explicit ack consumers, subscribe to pattern; for others use delivery subject
+            const subscribeTarget = requiresExplicitAck ? pattern : serverDeliverSubject;
+            const jsSubscription = await client.subscribe(subscribeTarget, opts);
+
+            // Create a properly typed object for the cache
+            const subscriptionObj = {
+              consumer: opts,
+              subscription: jsSubscription
+            };
+
+            subscription = subscriptionObj;
+            this.consumerCache.set(cacheKey, subscriptionObj);
+
+            // Process messages with improved error handling - pass the raw subscription iterator
+            this.processSubscription(jsSubscription);
+
+            if (requiresExplicitAck) {
+              this.logger.log(`Subscribed to ${pattern} on stream ${streamName} with pull-based consumer (explicit ack)`);
+            } else {
+              this.logger.log(`Subscribed to ${pattern} on stream ${streamName} with consumer ${consumerName}`);
             }
           }
-
-          if (this.options.consumer) {
-            this.options.consumer(opts);
-          }
-
-          // Ensure client subscribe targets correct stream when supported
-          try {
-            if (typeof (opts as any).stream === 'function') {
-              (opts as any).stream(streamName);
-            }
-          } catch (_) { /* ignore */ }
-
-          // Set deliver subject
-          opts.deliverTo(serverDeliverSubject);
-
-          // Use JetStream client's subscribe to receive JsMsg which preserve the original subject
-          const jsSubscription = await client.subscribe(serverDeliverSubject, opts);
-
-          // Create a properly typed object for the cache
-          const subscriptionObj = {
-            consumer: opts,
-            subscription: jsSubscription
-          };
-
-          subscription = subscriptionObj;
-          this.consumerCache.set(cacheKey, subscriptionObj);
-
-          // Process messages with improved error handling - pass the raw subscription iterator
-          this.processSubscription(jsSubscription);
-
-          this.logger.log(`Subscribed to ${pattern} on stream ${streamName} with consumer ${consumerName}`);
         }
       } catch (err) {
         // If server reports no stream matches subject, retry without filterSubject as a fallback
@@ -1296,11 +1366,8 @@ export class JetStream extends Server implements CustomTransportStrategy {
             retryOpts.deliverTo(deliverSubject);
 
             let jsSubscription: any;
-            if (this.nc) {
-              jsSubscription = this.nc.subscribe(deliverSubject);
-            } else {
-              jsSubscription = await client.subscribe(deliverSubject, retryOpts);
-            }
+            // Always use JetStream client for proper JsMsg objects
+            jsSubscription = await client.subscribe(deliverSubject, retryOpts);
              const subscriptionObj = { consumer: retryOpts, subscription: jsSubscription };
              subscription = subscriptionObj;
              if (cacheKey) this.consumerCache.set(cacheKey, subscriptionObj);
