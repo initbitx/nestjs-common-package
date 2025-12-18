@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-12-18
+
+### Added
+- Support for separate consumer `name` field (distinct from `durable_name`)
+- Support for additional consumer configuration options:
+  - `max_waiting`: Maximum number of waiting pulls
+  - `backoff`: Backoff intervals for retries (in seconds)
+  - `inactive_threshold`: Threshold for marking consumer as inactive
+  - `num_replicas`: Number of replicas
+  - `mem_storage`: Memory storage flag
+  - `sample_freq`: Sampling frequency
+
+### Fixed
+- **Multi-stream consumer configuration fixes:**
+  - Consumer `name` field is now separate from `durable_name` if provided
+  - Removed unnecessary `deliver_subject` for durable consumers (only set for non-durable consumers)
+  - `replay_policy` from ConsumerOptions is now properly respected instead of being hard-coded to `ReplayPolicy.Original`
+  - Additional consumer configuration options (`max_waiting`, `backoff`, etc.) are now properly applied
+  - Maintained backward compatibility with legacy configuration options
+
 ## [1.3.0] - 2025-12-16
 
 ### Added

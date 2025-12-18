@@ -4,6 +4,7 @@
  * without building the library. It constructs an example configuration object
  * that mirrors the shape used by the README and prints it.
  */
+import {AckPolicy, DeliverPolicy, ReplayPolicy} from "nats";
 
 type StreamConfig = {
   name: string;
@@ -24,31 +25,21 @@ export function buildExampleMultiStreamConfig() {
 
   const patternToStream = new Map<string, string>([
     ['orders.created', 'orders-stream'],
-    ['orders.updated', 'orders-stream'],
-    ['users.registered', 'users-stream']
   ]);
 
   const streamConsumers = new Map<string, ConsumerConfig>([
     ['orders-stream', {
       name: 'orders-durable-consumer',
       durable: true,
-      ack_wait: 30_000_000_000, // 30s in ns
-      deliver_policy: 'new',
-      ack_policy: 'explicit',
-      max_deliver: 10,
-      max_ack_pending: 500,
-      // Demonstrate server-side consumer filtering to only receive the required events
-      filter_subjects: ['orders.created']
-    }],
-    ['users-stream', {
-      name: 'users-durable-consumer',
-      durable: true,
-      ack_wait: 30_000_000_000,
-      deliver_policy: 'all',
-      ack_policy: 'explicit',
-      max_deliver: 5,
-      max_ack_pending: 200,
-      filter_subjects: ['users.registered']
+      deliver_policy: DeliverPolicy.All,
+      ack_policy: AckPolicy.Explicit,
+      replay_policy: ReplayPolicy.Instant,
+      max_deliver: -1,
+      max_ack_pending: 2000,
+      max_waiting: 512,
+      ack_wait: 1_000,
+      backoff: [1000000000, 2000000000, 5000000000, 10000000000, 30000000000, 60000000000, 120000000000, 300000000000],
+      filter_subjects: ['orders.created'],
     }]
   ]);
 

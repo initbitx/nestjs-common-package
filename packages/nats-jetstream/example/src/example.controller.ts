@@ -9,9 +9,4 @@ export class ExampleController {
   handleOrder(@Payload() data: any) {
     this.logger.log(`Received orders.created: ${JSON.stringify(data)}`);
   }
-
-  @EventPattern('users.registered')
-  handleUser(@Payload() data: any) {
-    this.logger.log(`Received users.registered: ${JSON.stringify(data)}`);
-  }
 }

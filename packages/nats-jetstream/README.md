@@ -341,6 +341,57 @@ import { DeliverPolicy, AckPolicy } from 'nats';
 export class AppModule {}
 ```
 
+### Enhanced Consumer Configuration (v1.3.1)
+
+Version 1.3.1 introduces additional consumer configuration options for production-grade deployments:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { NatsJetStreamModule } from '@initbit/nestjs-jetstream';
+import { DeliverPolicy, AckPolicy, ReplayPolicy } from 'nats';
+
+@Module({
+  imports: [
+    NatsJetStreamModule.register({
+      connection: {
+        servers: ['nats://localhost:4222']
+      },
+      stream: {
+        name: 'ticket-stream',
+        subjects: ['ticket.events.*', 'ticket.commands.*']
+      },
+      consumerOptions: {
+        // Separate consumer name from durable name (v1.3.1)
+        name: 'ticket-processor-consumer',
+        durable: true,
+        
+        // Control replay behavior (v1.3.1)
+        replay_policy: ReplayPolicy.Instant, // or ReplayPolicy.Original
+        
+        // Standard consumer options
+        deliver_policy: DeliverPolicy.All,
+        ack_policy: AckPolicy.Explicit,
+        ack_wait: 30_000_000_000, // 30 seconds
+        
+        // Enhanced configuration (v1.3.1)
+        max_waiting: 512,                     // Max waiting pulls
+        backoff: [1, 2, 5, 10, 30, 60, 120, 300], // Backoff in seconds
+        inactive_threshold: 300_000_000_000,  // 5 minutes in nanoseconds
+        num_replicas: 3,                      // For high availability
+        mem_storage: true,                    // Use memory storage
+        sample_freq: '10%',                   // Sample 10% of messages
+        
+        // Filter configuration
+        filter_subject: 'ticket.events.*',
+        max_deliver: 3,
+        max_ack_pending: 100
+      }
+    })
+  ]
+})
+export class AppModule {}
+```
+
 ### Example: Multi-Stream with durable consumers
 
 The following example shows a full NestJS module registration that configures two streams and durable consumers for each stream. It also includes a minimal controller that demonstrates how to handle messages coming from durable consumers and use `NatsContext` to `ack()` / `nack()` / `term()` messages.
@@ -510,13 +561,20 @@ The `NatsJetStreamOptions` interface provides the following configuration option
 
 ### Consumer Configuration (Recommended Approach)
 - `consumerOptions`: Configuration options for the NATS consumer
-  - `name`: Name of the consumer (replaces top-level `durableName`)
+  - `name`: Name of the consumer (separate from and replaces `durable_name`)
   - `durable`: Whether this consumer should be durable (if false, name will be ignored)
   - `deliver_policy`: Delivery policy for the consumer (e.g., DeliverPolicy.All, DeliverPolicy.New)
   - `ack_policy`: Acknowledgment policy for the consumer (e.g., AckPolicy.Explicit, AckPolicy.None)
   - `ack_wait`: How long to wait for an acknowledgment (in nanoseconds)
+  - `replay_policy`: How to replay messages (e.g., ReplayPolicy.Original, ReplayPolicy.Instant) **New in v1.3.1**
   - `filter_subject`: A single subject to filter messages from the stream
   - `filter_subjects`: Multiple subjects to filter messages from the stream
+  - `max_waiting`: Maximum number of waiting pulls **New in v1.3.1**
+  - `backoff`: Backoff intervals for retries (array of seconds) **New in v1.3.1**
+  - `inactive_threshold`: Threshold for marking consumer as inactive (in nanoseconds) **New in v1.3.1**
+  - `num_replicas`: Number of replicas **New in v1.3.1**
+  - `mem_storage`: Use memory storage flag **New in v1.3.1**
+  - `sample_freq`: Sampling frequency **New in v1.3.1**
   - Plus any other properties from the NATS ConsumerConfig interface (max_deliver, max_ack_pending, etc.)
 
 ### Application Configuration
@@ -568,6 +626,19 @@ The following improvements are planned for future releases:
 ## Recent Improvements
 
 The following improvements have been implemented in recent releases:
+
+### Enhanced Consumer Configuration (v1.3.1)
+- **Separate Consumer Names**: Consumer `name` field is now separate from `durable_name` for better identification and management
+- **Advanced Consumer Options**: Added support for additional consumer configuration:
+  - `max_waiting`: Maximum number of waiting pulls for better flow control
+  - `backoff`: Configurable backoff intervals for retries (array of seconds)
+  - `replay_policy`: Control how messages are replayed (Original, Instant, etc.)
+  - `inactive_threshold`: Threshold for marking consumer as inactive
+  - `num_replicas`: Number of replicas for high availability
+  - `mem_storage`: Memory storage option for performance optimization
+  - `sample_freq`: Sampling frequency for monitoring
+- **Durable Consumer Optimization**: Removed unnecessary `deliver_subject` for durable consumers, improving efficiency
+- **Backward Compatibility**: All legacy configuration options remain supported during migration period
 
 ### Performance Optimizations and Developer Experience (v1.3.0)
 - **High-Throughput Message Processing**: Optimized message handling for better performance in high-load scenarios

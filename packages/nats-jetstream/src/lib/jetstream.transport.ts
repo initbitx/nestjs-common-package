@@ -766,13 +766,18 @@ export class JetStream extends Server implements CustomTransportStrategy {
 
       // Start with base consumer config
       const consumerConfig: ConsumerConfig = {
-        ack_policy: this.options.ackPolicy || AckPolicy.Explicit,
-        deliver_policy: this.options.deliverPolicy || DeliverPolicy.All,
-        replay_policy: ReplayPolicy.Original
+        ack_policy: this.options.consumerOptions?.ack_policy || this.options.ackPolicy || AckPolicy.Explicit,
+        deliver_policy: this.options.consumerOptions?.deliver_policy || this.options.deliverPolicy || DeliverPolicy.All,
+        replay_policy: this.options.consumerOptions?.replay_policy || ReplayPolicy.Original
       };
 
       // Check if we should create a durable consumer
       const isDurable = this.options.consumerOptions?.durable !== false;
+
+      // Set consumer name (separate from durable_name if provided)
+      if (this.options.consumerOptions?.name) {
+        (consumerConfig as any).name = this.options.consumerOptions.name;
+      }
 
       // Add durable_name if this is a durable consumer
       if (isDurable && consumerName) {
@@ -1150,10 +1155,21 @@ export class JetStream extends Server implements CustomTransportStrategy {
                 const consumerConfig: ConsumerConfig = {
                   ack_policy: streamConsumerOptions?.ack_policy || this.options.ackPolicy || AckPolicy.Explicit,
                   deliver_policy: streamConsumerOptions?.deliver_policy || this.options.deliverPolicy || DeliverPolicy.All,
-                  replay_policy: ReplayPolicy.Original,
-                  durable_name: consumerName,
-                  deliver_subject: deliverSubject
+                  replay_policy: streamConsumerOptions?.replay_policy || this.options.consumerOptions?.replay_policy || ReplayPolicy.Original,
                 };
+
+                // Set consumer name (separate from durable_name if provided)
+                if (streamConsumerOptions?.name) {
+                  (consumerConfig as any).name = streamConsumerOptions.name;
+                }
+
+                // Set durable_name only if this is a durable consumer
+                if (isDurable) {
+                  consumerConfig.durable_name = consumerName;
+                } else {
+                  // For non-durable consumers, we need a deliver_subject
+                  consumerConfig.deliver_subject = deliverSubject;
+                }
 
                 // Allow stream-specific consumer configuration to provide either a list of
                 // filter subjects (`filter_subjects`) or a single `filter_subject`.
@@ -1174,6 +1190,26 @@ export class JetStream extends Server implements CustomTransportStrategy {
                 }
                 if (streamConsumerOptions?.max_ack_pending !== undefined) {
                   consumerConfig.max_ack_pending = streamConsumerOptions.max_ack_pending;
+                }
+
+                // Additional consumer configuration options
+                if (streamConsumerOptions?.max_waiting !== undefined) {
+                  (consumerConfig as any).max_waiting = streamConsumerOptions.max_waiting;
+                }
+                if (streamConsumerOptions?.backoff !== undefined) {
+                  (consumerConfig as any).backoff = streamConsumerOptions.backoff;
+                }
+                if (streamConsumerOptions?.inactive_threshold !== undefined) {
+                  consumerConfig.inactive_threshold = streamConsumerOptions.inactive_threshold;
+                }
+                if (streamConsumerOptions?.num_replicas !== undefined) {
+                  consumerConfig.num_replicas = streamConsumerOptions.num_replicas;
+                }
+                if (streamConsumerOptions?.mem_storage !== undefined) {
+                  consumerConfig.mem_storage = streamConsumerOptions.mem_storage;
+                }
+                if (streamConsumerOptions?.sample_freq !== undefined) {
+                  (consumerConfig as any).sample_freq = streamConsumerOptions.sample_freq;
                 }
 
                 // Try to add; if add fails due to overlaps or other issues, log and continue — subscription may still work with an existing consumer
